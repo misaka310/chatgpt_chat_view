@@ -1,0 +1,107 @@
+[
+  {
+    "conversation_id": "conv-001",
+    "title": "Codex で GitHub Actions を直したい",
+    "mapping": {
+      "n1": {
+        "id": "n1",
+        "message": {
+          "id": "m1",
+          "author": { "role": "user" },
+          "create_time": 1704067200,
+          "content": { "parts": ["GitHub Actions が失敗します"] }
+        }
+      },
+      "n2": {
+        "id": "n2",
+        "message": {
+          "id": "m2",
+          "author": { "role": "assistant" },
+          "create_time": 1704067260,
+          "content": { "parts": ["Codex でログを確認しましょう"] }
+        }
+      },
+      "n3": {
+        "id": "n3",
+        "message": {
+          "id": "m1",
+          "author": { "role": "user" },
+          "create_time": 1704067300,
+          "content": { "parts": ["このメッセージは重複扱いになるべき"] }
+        }
+      },
+      "n4": {
+        "id": "n4",
+        "message": {
+          "author": { "role": "user" },
+          "create_time": 1704067320,
+          "content": { "parts": ["画像生成の権利ってどうなる？"] }
+        }
+      },
+      "n5": {
+        "id": "n5",
+        "message": {
+          "author": { "role": "user" },
+          "create_time": 1704067320,
+          "content": { "parts": ["画像生成の権利ってどうなる？"] }
+        }
+      }
+    }
+  },
+  {
+    "conversation_id": "conv-001",
+    "title": "Codex で GitHub Actions を直したい（duplicate object）",
+    "mapping": {
+      "d1": {
+        "id": "d1",
+        "message": {
+          "id": "m1",
+          "author": { "role": "user" },
+          "create_time": 1704067200,
+          "content": { "parts": ["GitHub Actions が失敗します"] }
+        }
+      },
+      "d2": {
+        "id": "d2",
+        "message": {
+          "id": "m2",
+          "author": { "role": "assistant" },
+          "create_time": 1704067260,
+          "content": { "parts": ["Codex でログを確認しましょう"] }
+        }
+      },
+      "d3": {
+        "id": "d3",
+        "message": {
+          "author": { "role": "user" },
+          "create_time": 1704067320,
+          "content": { "parts": ["画像生成の権利ってどうなる？"] }
+        }
+      }
+    }
+  },
+  {
+    "conversation_id": "conv-002",
+    "title": "音声生成を試したい",
+    "mapping": {
+      "a1": {
+        "id": "a1",
+        "message": {
+          "id": "m10",
+          "author": { "role": "user" },
+          "create_time": 1706745600,
+          "content": { "parts": ["音声生成ツールの比較をしたい"] }
+        }
+      },
+      "a2": {
+        "id": "a2",
+        "message": {
+          "id": "m11",
+          "author": { "role": "assistant" },
+          "create_time": 1706745660,
+          "content": { "parts": ["用途別の候補を出します"] }
+        }
+      }
+    }
+  }
+]

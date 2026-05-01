@@ -1,0 +1,143 @@
+{
+  "fallback_category": "その他",
+  "top_keywords_limit": 8,
+  "keywords_monthly_limit": 100,
+  "daily_top_conversations_limit": 20,
+  "categories": [
+    {
+      "name": "開発 / Codex / GitHub",
+      "keywords": [
+        "codex",
+        "github",
+        "git",
+        "pull request",
+        "actions",
+        "ci",
+        "python",
+        "javascript",
+        "typescript",
+        "テスト",
+        "バグ",
+        "実装",
+        "リポジトリ"
+      ]
+    },
+    {
+      "name": "配信者・ドチタオ関連",
+      "keywords": [
+        "配信",
+        "配信者",
+        "ドチタオ",
+        "youtube",
+        "twitch",
+        "切り抜き",
+        "サムネ",
+        "視聴者"
+      ]
+    },
+    {
+      "name": "画像生成",
+      "keywords": [
+        "画像",
+        "イラスト",
+        "image",
+        "image generation",
+        "stable diffusion",
+        "midjourney",
+        "dall",
+        "サムネイル"
+      ]
+    },
+    {
+      "name": "音声生成",
+      "keywords": [
+        "音声",
+        "voice",
+        "vocal",
+        "tts",
+        "読み上げ",
+        "ボイス",
+        "歌声",
+        "audio generation"
+      ]
+    },
+    {
+      "name": "権利・許可",
+      "keywords": [
+        "権利",
+        "著作権",
+        "利用規約",
+        "許可",
+        "商用",
+        "license",
+        "ライセンス",
+        "クレジット"
+      ]
+    },
+    {
+      "name": "言葉の意味",
+      "keywords": [
+        "意味",
+        "とは",
+        "英語",
+        "日本語",
+        "言い換え",
+        "語源",
+        "定義"
+      ]
+    },
+    {
+      "name": "生活",
+      "keywords": [
+        "家事",
+        "買い物",
+        "料理",
+        "健康",
+        "睡眠",
+        "運動",
+        "節約",
+        "生活"
+      ]
+    },
+    {
+      "name": "人生・目標",
+      "keywords": [
+        "人生",
+        "目標",
+        "キャリア",
+        "転職",
+        "学習",
+        "習慣",
+        "モチベーション",
+        "将来"
+      ]
+    },
+    {
+      "name": "その他",
+      "keywords": []
+    }
+  ],
+  "keyword_stopwords": [
+    "the",
+    "and",
+    "for",
+    "that",
+    "this",
+    "with",
+    "from",
+    "have",
+    "your",
+    "you",
+    "です",
+    "ます",
+    "する",
+    "した",
+    "して",
+    "ある",
+    "いる",
+    "こと",
+    "よう",
+    "それ",
+    "これ"
+  ]
+}
