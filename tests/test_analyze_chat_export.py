@@ -69,9 +69,13 @@ class AnalyzeChatExportTest(unittest.TestCase):
             self.assertAlmostEqual(monthly["2024-01"]["avg_per_elapsed_day"], 2 / 31, places=6)
             self.assertAlmostEqual(monthly["2024-01"]["avg_per_active_day"], 2.0, places=6)
             self.assertAlmostEqual(monthly["2024-01"]["median_daily_user_messages"], 0.0, places=6)
+            self.assertEqual(monthly["2024-01"]["peak_daily_user_messages"], 2)
+            self.assertEqual(monthly["2024-01"]["peak_daily_date"], "2024-01-01")
             self.assertAlmostEqual(monthly["2024-02"]["avg_per_elapsed_day"], 1.0, places=6)
             self.assertAlmostEqual(monthly["2024-02"]["avg_per_active_day"], 1.0, places=6)
             self.assertAlmostEqual(monthly["2024-02"]["median_daily_user_messages"], 1.0, places=6)
+            self.assertEqual(monthly["2024-02"]["peak_daily_user_messages"], 1)
+            self.assertEqual(monthly["2024-02"]["peak_daily_date"], "2024-02-01")
 
             for filename in (
                 "conversations_index.csv",

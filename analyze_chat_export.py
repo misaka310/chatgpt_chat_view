@@ -34,6 +34,8 @@ MONTHLY_REQUIRED_KEYS = (
     "avg_per_elapsed_day",
     "avg_per_active_day",
     "median_daily_user_messages",
+    "peak_daily_user_messages",
+    "peak_daily_date",
 )
 DEFAULT_CATEGORY_RULES_PATH = Path("rules/category_keywords.json")
 TOKEN_PATTERN = re.compile(r"[A-Za-z0-9_+#./-]{2,}|[ぁ-んァ-ヶー一-龠]{2,}")
@@ -515,6 +517,14 @@ def collect_stats_from_inputs(paths: Iterable[Path], marker: Optional[str], loca
         avg_per_elapsed_day = float(user_count / elapsed_days) if elapsed_days else 0.0
         avg_per_active_day = float(user_count / active_days_count) if active_days_count else 0.0
         median_daily_user_messages = median_value(daily_series)
+        day_counter = monthly_daily_user_counts.get(month, Counter())
+        if day_counter:
+            peak_day, peak_count = min(day_counter.items(), key=lambda kv: (-kv[1], kv[0]))
+            peak_daily_user_messages = int(peak_count)
+            peak_daily_date = f"{month}-{peak_day:02d}"
+        else:
+            peak_daily_user_messages = 0
+            peak_daily_date = ""
         monthly_rows.append(
             {
                 "month": month,
@@ -525,6 +535,8 @@ def collect_stats_from_inputs(paths: Iterable[Path], marker: Optional[str], loca
                 "avg_per_elapsed_day": avg_per_elapsed_day,
                 "avg_per_active_day": avg_per_active_day,
                 "median_daily_user_messages": median_daily_user_messages,
+                "peak_daily_user_messages": peak_daily_user_messages,
+                "peak_daily_date": peak_daily_date,
             }
         )
         role_monthly_rows.append(
@@ -966,7 +978,7 @@ def build_dashboard_html(parsed: dict) -> str:
         <h2>月別 user メッセージ</h2>
         <div class="small-table-wrap">
           <table>
-            <thead><tr><th>month</th><th>user_messages</th><th>conversations</th><th>active_days</th><th>avg_per_elapsed_day</th><th>avg_per_active_day</th><th>median_daily_user_messages</th></tr></thead>
+            <thead><tr><th>month</th><th>user_messages</th><th>conversations</th><th>active_days</th><th>avg_per_elapsed_day</th><th>avg_per_active_day</th><th>median_daily_user_messages</th><th>peak_daily_user_messages</th><th>peak_daily_date</th></tr></thead>
             <tbody id="monthlyBody"></tbody>
           </table>
         </div>
@@ -1104,7 +1116,7 @@ def build_dashboard_html(parsed: dict) -> str:
       const body = document.getElementById("monthlyBody");
       body.innerHTML = "";
       if (!MONTHLY.length) {
-        body.innerHTML = `<tr><td colspan="7" class="empty">データがありません</td></tr>`;
+        body.innerHTML = `<tr><td colspan="9" class="empty">データがありません</td></tr>`;
         return;
       }
       const maxUser = Math.max(...MONTHLY.map(r=>Number(r.user_messages || 0)), 1);
@@ -1122,6 +1134,8 @@ def build_dashboard_html(parsed: dict) -> str:
           <td>${formatOneDecimal(row.avg_per_elapsed_day)}</td>
           <td>${formatOneDecimal(row.avg_per_active_day)}</td>
           <td>${formatOneDecimal(row.median_daily_user_messages)}</td>
+          <td>${formatNumber(row.peak_daily_user_messages)}</td>
+          <td class="mono">${row.peak_daily_date || ""}</td>
         `;
         body.appendChild(tr);
       }
