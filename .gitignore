@@ -1,0 +1,15 @@
+﻿# Python cache
+__pycache__/
+*.py[cod]
+
+# Raw ChatGPT export data (do not upload)
+chat.html
+conversations.json
+conversations-*.json
+
+# Derived data from chat exports (do not upload)
+parsed_summary.json
+monthly_*.csv
+daily_*.csv
+dashboard.html
+monthly_summary.md
