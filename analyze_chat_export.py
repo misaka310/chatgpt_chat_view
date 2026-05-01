@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import calendar
 import csv
 import hashlib
 import json
@@ -28,6 +29,11 @@ PARSED_REQUIRED_KEYS = (
     "daily_top_conversations",
     "role_monthly",
     "conversation_index",
+)
+MONTHLY_REQUIRED_KEYS = (
+    "avg_per_elapsed_day",
+    "avg_per_active_day",
+    "median_daily_user_messages",
 )
 DEFAULT_CATEGORY_RULES_PATH = Path("rules/category_keywords.json")
 TOKEN_PATTERN = re.compile(r"[A-Za-z0-9_+#./-]{2,}|[ぁ-んァ-ヶー一-龠]{2,}")
@@ -152,7 +158,17 @@ def normalize_role(role: Optional[str]) -> str:
 
 
 def has_required_parsed_shape(parsed: Any) -> bool:
-    return isinstance(parsed, dict) and all(k in parsed for k in PARSED_REQUIRED_KEYS)
+    if not (isinstance(parsed, dict) and all(k in parsed for k in PARSED_REQUIRED_KEYS)):
+        return False
+    monthly = parsed.get("monthly")
+    if not isinstance(monthly, list):
+        return False
+    for row in monthly[:3]:
+        if not isinstance(row, dict):
+            return False
+        if not all(k in row for k in MONTHLY_REQUIRED_KEYS):
+            return False
+    return True
 
 
 def should_reuse_parsed(parsed_path: Path, inputs: list[Path], rules_path: Path) -> bool:
@@ -328,6 +344,22 @@ def iso_from_timestamp(ts: Optional[float], tz_obj) -> Optional[str]:
     return datetime.fromtimestamp(ts, tz=timezone.utc).astimezone(tz_obj).isoformat()
 
 
+def month_total_days(month: str) -> int:
+    year = int(month[:4])
+    mon = int(month[5:7])
+    return calendar.monthrange(year, mon)[1]
+
+
+def median_value(values: list[int]) -> float:
+    if not values:
+        return 0.0
+    ordered = sorted(values)
+    mid = len(ordered) // 2
+    if len(ordered) % 2 == 1:
+        return float(ordered[mid])
+    return float((ordered[mid - 1] + ordered[mid]) / 2.0)
+
+
 def collect_stats_from_inputs(paths: Iterable[Path], marker: Optional[str], local_tz, rules: dict) -> dict:
     monthly_user: Counter[str] = Counter()
     monthly_conv_ids: Dict[str, set[str]] = defaultdict(set)
@@ -341,6 +373,7 @@ def collect_stats_from_inputs(paths: Iterable[Path], marker: Optional[str], loca
     conv_titles: Dict[str, str] = {}
     conversation_stats: Dict[str, dict] = {}
     monthly_keyword_counts: Dict[str, Counter[str]] = defaultdict(Counter)
+    monthly_daily_user_counts: Dict[str, Counter[int]] = defaultdict(Counter)
     seen_message_keys: set[str] = set()
 
     total_conversation_objects = 0
@@ -446,6 +479,7 @@ def collect_stats_from_inputs(paths: Iterable[Path], marker: Optional[str], loca
                     monthly_user[month] += 1
                     monthly_conv_ids[month].add(conv_id)
                     monthly_active_days[month].add(day)
+                    monthly_daily_user_counts[month][dt.day] += 1
                     daily_user[day] += 1
                     daily_conv_ids[day].add(conv_id)
                     daily_hourly[(day, hour)] += 1
@@ -464,15 +498,33 @@ def collect_stats_from_inputs(paths: Iterable[Path], marker: Optional[str], loca
 
     monthly_rows = []
     role_monthly_rows = []
+    latest_month = max(months) if months else None
     for month in months:
         role_counts = monthly_role_counts.get(month, Counter())
+        user_count = int(monthly_user.get(month, 0))
+        active_days_count = int(len(monthly_active_days.get(month, set())))
+        total_days = month_total_days(month)
+        last_data_day = max(monthly_daily_user_counts.get(month, Counter()).keys(), default=0)
+        is_in_progress = month == latest_month and 0 < last_data_day < total_days
+        elapsed_days = last_data_day if is_in_progress else total_days
+        elapsed_days = elapsed_days if elapsed_days > 0 else total_days
+        daily_series = [
+            int(monthly_daily_user_counts.get(month, Counter()).get(day, 0))
+            for day in range(1, elapsed_days + 1)
+        ]
+        avg_per_elapsed_day = float(user_count / elapsed_days) if elapsed_days else 0.0
+        avg_per_active_day = float(user_count / active_days_count) if active_days_count else 0.0
+        median_daily_user_messages = median_value(daily_series)
         monthly_rows.append(
             {
                 "month": month,
                 "year": month[:4],
-                "user_messages": int(monthly_user.get(month, 0)),
+                "user_messages": user_count,
                 "conversations": int(len(monthly_conv_ids.get(month, set()))),
-                "active_days": int(len(monthly_active_days.get(month, set()))),
+                "active_days": active_days_count,
+                "avg_per_elapsed_day": avg_per_elapsed_day,
+                "avg_per_active_day": avg_per_active_day,
+                "median_daily_user_messages": median_daily_user_messages,
             }
         )
         role_monthly_rows.append(
@@ -914,7 +966,7 @@ def build_dashboard_html(parsed: dict) -> str:
         <h2>月別 user メッセージ</h2>
         <div class="small-table-wrap">
           <table>
-            <thead><tr><th>month</th><th>user_messages</th><th>conversations</th><th>active_days</th></tr></thead>
+            <thead><tr><th>month</th><th>user_messages</th><th>conversations</th><th>active_days</th><th>avg_per_elapsed_day</th><th>avg_per_active_day</th><th>median_daily_user_messages</th></tr></thead>
             <tbody id="monthlyBody"></tbody>
           </table>
         </div>
@@ -987,6 +1039,7 @@ def build_dashboard_html(parsed: dict) -> str:
     const INDEX = (DATA.conversation_index || []).slice();
 
     const formatNumber = (v) => Number(v || 0).toLocaleString();
+    const formatOneDecimal = (v) => Number(v || 0).toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
     const normalize = (v) => String(v || "").toLowerCase();
     const monthOfIso = (iso) => {
       if (!iso || typeof iso !== "string" || iso.length < 7) return "";
@@ -1051,7 +1104,7 @@ def build_dashboard_html(parsed: dict) -> str:
       const body = document.getElementById("monthlyBody");
       body.innerHTML = "";
       if (!MONTHLY.length) {
-        body.innerHTML = `<tr><td colspan="4" class="empty">データがありません</td></tr>`;
+        body.innerHTML = `<tr><td colspan="7" class="empty">データがありません</td></tr>`;
         return;
       }
       const maxUser = Math.max(...MONTHLY.map(r=>Number(r.user_messages || 0)), 1);
@@ -1066,6 +1119,9 @@ def build_dashboard_html(parsed: dict) -> str:
           </td>
           <td>${formatNumber(row.conversations)}</td>
           <td>${formatNumber(row.active_days)}</td>
+          <td>${formatOneDecimal(row.avg_per_elapsed_day)}</td>
+          <td>${formatOneDecimal(row.avg_per_active_day)}</td>
+          <td>${formatOneDecimal(row.median_daily_user_messages)}</td>
         `;
         body.appendChild(tr);
       }
@@ -1439,8 +1495,13 @@ def main() -> None:
     parsed_path = output_dir / "parsed_summary.json"
 
     if not args.rebuild and should_reuse_parsed(parsed_path, input_files, rules_path):
-        parsed = load_parsed(parsed_path)
-        parse_mode = "reused parsed_summary.json"
+        try:
+            parsed = load_parsed(parsed_path)
+            parse_mode = "reused parsed_summary.json"
+        except ValueError:
+            local_tz = ensure_timezone(args.timezone)
+            parsed = collect_stats_from_inputs(input_files, marker, local_tz, rules)
+            parse_mode = "parsed raw export (incompatible parsed_summary.json was rebuilt)"
     else:
         local_tz = ensure_timezone(args.timezone)
         parsed = collect_stats_from_inputs(input_files, marker, local_tz, rules)

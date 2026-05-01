@@ -63,6 +63,14 @@ start .\dashboard.html
 - 会話ごとにキーワード辞書方式で `inferred_category` を付与します。
 - ルールを編集した場合は `--rebuild` で再解析してください。
 
+## 月別3指標
+
+- `avg_per_elapsed_day`: `user_messages / その月の経過日数`
+- `avg_per_active_day`: `user_messages / active_days`
+- `median_daily_user_messages`: その月の日別 `user_messages` の中央値
+
+経過日数は、過去月は月末日まで、進行中の月はデータが存在する最終日までを使用します。
+
 ## ダッシュボードでできること
 
 - 会話一覧テーブルの表示

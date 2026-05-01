@@ -65,6 +65,14 @@ class AnalyzeChatExportTest(unittest.TestCase):
             self.assertEqual(conv_index["conv-002"]["total_message_count"], 2)
             self.assertIn(conv_index["conv-002"]["inferred_category"], ("音声生成", "その他"))
 
+            monthly = {row["month"]: row for row in parsed["monthly"]}
+            self.assertAlmostEqual(monthly["2024-01"]["avg_per_elapsed_day"], 2 / 31, places=6)
+            self.assertAlmostEqual(monthly["2024-01"]["avg_per_active_day"], 2.0, places=6)
+            self.assertAlmostEqual(monthly["2024-01"]["median_daily_user_messages"], 0.0, places=6)
+            self.assertAlmostEqual(monthly["2024-02"]["avg_per_elapsed_day"], 1.0, places=6)
+            self.assertAlmostEqual(monthly["2024-02"]["avg_per_active_day"], 1.0, places=6)
+            self.assertAlmostEqual(monthly["2024-02"]["median_daily_user_messages"], 1.0, places=6)
+
             for filename in (
                 "conversations_index.csv",
                 "category_monthly.csv",
