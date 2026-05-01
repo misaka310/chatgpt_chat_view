@@ -57,6 +57,10 @@ class AnalyzeChatExportTest(unittest.TestCase):
             self.assertEqual(stats["total_unique_messages"], 5)
             self.assertEqual(stats["total_duplicate_messages_skipped"], 5)
             self.assertEqual(stats["total_conversations"], 2)
+            self.assertIn(
+                stats.get("token_estimation_method"),
+                ("tiktoken:o200k_base", "char_fallback_v1"),
+            )
 
             conv_index = {row["conversation_id"]: row for row in parsed["conversation_index"]}
             self.assertEqual(conv_index["conv-001"]["total_message_count"], 3)
@@ -77,6 +81,38 @@ class AnalyzeChatExportTest(unittest.TestCase):
             self.assertEqual(monthly["2024-02"]["peak_daily_user_messages"], 1)
             self.assertEqual(monthly["2024-02"]["peak_daily_date"], "2024-02-01")
 
+            jan = monthly["2024-01"]
+            required_token_keys = (
+                "user_tokens_est",
+                "assistant_tokens_est",
+                "system_tokens_est",
+                "tool_tokens_est",
+                "total_tokens_est",
+                "avg_user_tokens_est",
+                "avg_tokens_per_active_day_est",
+            )
+            for key in required_token_keys:
+                self.assertIn(key, jan)
+                self.assertGreaterEqual(jan[key], 0)
+            self.assertEqual(
+                jan["total_tokens_est"],
+                jan["user_tokens_est"]
+                + jan["assistant_tokens_est"]
+                + jan["system_tokens_est"]
+                + jan["tool_tokens_est"]
+                + jan.get("other_tokens_est", 0),
+            )
+            self.assertAlmostEqual(
+                jan["avg_user_tokens_est"],
+                jan["user_tokens_est"] / jan["user_messages"],
+                places=6,
+            )
+            self.assertAlmostEqual(
+                jan["avg_tokens_per_active_day_est"],
+                jan["total_tokens_est"] / jan["active_days"],
+                places=6,
+            )
+
             for filename in (
                 "conversations_index.csv",
                 "category_monthly.csv",
@@ -85,6 +121,10 @@ class AnalyzeChatExportTest(unittest.TestCase):
                 "dashboard.html",
             ):
                 self.assertTrue((output_dir / filename).exists(), f"{filename} was not generated")
+
+            dashboard_html = (output_dir / "dashboard.html").read_text(encoding="utf-8")
+            self.assertIn("total_tokens_est", dashboard_html)
+            self.assertIn("avg_user_tokens_est", dashboard_html)
 
 
 if __name__ == "__main__":

@@ -10,7 +10,7 @@ import re
 from collections import Counter, defaultdict
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Dict, Iterable, Iterator, Optional
+from typing import Any, Callable, Dict, Iterable, Iterator, Optional
 
 try:
     from zoneinfo import ZoneInfo
@@ -251,6 +251,34 @@ def tokenize_text(value: str, stopwords: set[str]) -> list[str]:
     return tokens
 
 
+def fallback_token_estimate(text: str) -> int:
+    stripped = (text or "").strip()
+    if not stripped:
+        return 0
+    ascii_chars = sum(1 for ch in stripped if ord(ch) < 128)
+    non_ascii_chars = len(stripped) - ascii_chars
+    # Rough estimate: ASCII text is denser than CJK text.
+    estimated = (ascii_chars / 4.0) + float(non_ascii_chars)
+    return max(1, int(round(estimated)))
+
+
+def build_token_estimator() -> tuple[Callable[[str], int], str]:
+    try:
+        import tiktoken  # type: ignore
+
+        encoding = tiktoken.get_encoding("o200k_base")
+
+        def estimate_with_tiktoken(text: str) -> int:
+            stripped = (text or "").strip()
+            if not stripped:
+                return 0
+            return len(encoding.encode(stripped, disallowed_special=()))
+
+        return estimate_with_tiktoken, "tiktoken:o200k_base"
+    except Exception:
+        return fallback_token_estimate, "char_fallback_v1"
+
+
 def build_message_dedupe_key(conv_id: str, message: dict, role: str, text: str) -> str:
     message_id = message.get("id")
     if isinstance(message_id, str) and message_id.strip():
@@ -363,6 +391,8 @@ def median_value(values: list[int]) -> float:
 
 
 def collect_stats_from_inputs(paths: Iterable[Path], marker: Optional[str], local_tz, rules: dict) -> dict:
+    estimate_tokens, token_estimation_method = build_token_estimator()
+
     monthly_user: Counter[str] = Counter()
     monthly_conv_ids: Dict[str, set[str]] = defaultdict(set)
     monthly_active_days: Dict[str, set[str]] = defaultdict(set)
@@ -372,6 +402,7 @@ def collect_stats_from_inputs(paths: Iterable[Path], marker: Optional[str], loca
     monthly_weekday_hour: Counter[tuple[str, int, int]] = Counter()
     daily_conv_user_counts: Dict[str, Counter[str]] = defaultdict(Counter)
     monthly_role_counts: Dict[str, Counter[str]] = defaultdict(Counter)
+    monthly_role_tokens: Dict[str, Counter[str]] = defaultdict(Counter)
     conv_titles: Dict[str, str] = {}
     conversation_stats: Dict[str, dict] = {}
     monthly_keyword_counts: Dict[str, Counter[str]] = defaultdict(Counter)
@@ -439,6 +470,7 @@ def collect_stats_from_inputs(paths: Iterable[Path], marker: Optional[str], loca
                 author = message.get("author") or {}
                 role = normalize_role(author.get("role") if isinstance(author, dict) else None)
                 text = extract_message_text(message)
+                token_est = estimate_tokens(text)
                 msg_key = build_message_dedupe_key(conv_id, message, role, text)
                 if msg_key in seen_message_keys:
                     total_duplicate_messages_skipped += 1
@@ -477,6 +509,7 @@ def collect_stats_from_inputs(paths: Iterable[Path], marker: Optional[str], loca
                 stats["daily_roles"][day][role] += 1
 
                 monthly_role_counts[month][role] += 1
+                monthly_role_tokens[month][role] += int(token_est)
                 if role == "user":
                     monthly_user[month] += 1
                     monthly_conv_ids[month].add(conv_id)
@@ -503,6 +536,7 @@ def collect_stats_from_inputs(paths: Iterable[Path], marker: Optional[str], loca
     latest_month = max(months) if months else None
     for month in months:
         role_counts = monthly_role_counts.get(month, Counter())
+        role_token_counts = monthly_role_tokens.get(month, Counter())
         user_count = int(monthly_user.get(month, 0))
         active_days_count = int(len(monthly_active_days.get(month, set())))
         total_days = month_total_days(month)
@@ -525,13 +559,42 @@ def collect_stats_from_inputs(paths: Iterable[Path], marker: Optional[str], loca
         else:
             peak_daily_user_messages = 0
             peak_daily_date = ""
+        user_tokens_est = int(role_token_counts.get("user", 0))
+        assistant_tokens_est = int(role_token_counts.get("assistant", 0))
+        system_tokens_est = int(role_token_counts.get("system", 0))
+        tool_tokens_est = int(role_token_counts.get("tool", 0))
+        other_tokens_est = int(role_token_counts.get("other", 0))
+        total_tokens_est = (
+            user_tokens_est
+            + assistant_tokens_est
+            + system_tokens_est
+            + tool_tokens_est
+            + other_tokens_est
+        )
+        avg_user_tokens_est = float(user_tokens_est / user_count) if user_count else 0.0
+        avg_tokens_per_active_day_est = (
+            float(total_tokens_est / active_days_count) if active_days_count else 0.0
+        )
         monthly_rows.append(
             {
                 "month": month,
                 "year": month[:4],
                 "user_messages": user_count,
+                "assistant_messages": int(role_counts.get("assistant", 0)),
+                "system_messages": int(role_counts.get("system", 0)),
+                "tool_messages": int(role_counts.get("tool", 0)),
+                "other_messages": int(role_counts.get("other", 0)),
+                "total_messages": int(sum(role_counts.values())),
                 "conversations": int(len(monthly_conv_ids.get(month, set()))),
                 "active_days": active_days_count,
+                "user_tokens_est": user_tokens_est,
+                "assistant_tokens_est": assistant_tokens_est,
+                "system_tokens_est": system_tokens_est,
+                "tool_tokens_est": tool_tokens_est,
+                "other_tokens_est": other_tokens_est,
+                "total_tokens_est": total_tokens_est,
+                "avg_user_tokens_est": avg_user_tokens_est,
+                "avg_tokens_per_active_day_est": avg_tokens_per_active_day_est,
                 "avg_per_elapsed_day": avg_per_elapsed_day,
                 "avg_per_active_day": avg_per_active_day,
                 "median_daily_user_messages": median_daily_user_messages,
@@ -731,6 +794,7 @@ def collect_stats_from_inputs(paths: Iterable[Path], marker: Optional[str], loca
                 "active_days": "unique local dates with >=1 user message in period",
                 "timestamp_priority": "create_time first, then update_time",
                 "message_dedupe": "conversation_id + message.id. If message.id is unavailable, conversation_id + fallback hash(role,timestamp,text,recipient).",
+                "token_estimation": "local estimate from message body text only (not API billing tokens)",
             },
             "stats": {
                 "total_conversation_objects": total_conversation_objects,
@@ -738,6 +802,7 @@ def collect_stats_from_inputs(paths: Iterable[Path], marker: Optional[str], loca
                 "total_duplicate_messages_skipped": total_duplicate_messages_skipped,
                 "total_timestamped_messages": total_timestamped_messages,
                 "total_conversations": len(conversation_index),
+                "token_estimation_method": token_estimation_method,
             },
         },
         "monthly": monthly_rows,
@@ -978,7 +1043,7 @@ def build_dashboard_html(parsed: dict) -> str:
         <h2>月別 user メッセージ</h2>
         <div class="small-table-wrap">
           <table>
-            <thead><tr><th>month</th><th>user_messages</th><th>conversations</th><th>active_days</th><th>avg_per_elapsed_day</th><th>avg_per_active_day</th><th>median_daily_user_messages</th><th>peak_daily_user_messages</th><th>peak_daily_date</th></tr></thead>
+            <thead><tr><th>month</th><th>user_messages</th><th>conversations</th><th>active_days</th><th>user_tokens_est</th><th>assistant_tokens_est</th><th>total_tokens_est</th><th>avg_user_tokens_est</th><th>avg_tokens_per_active_day_est</th><th>avg_per_elapsed_day</th><th>avg_per_active_day</th><th>median_daily_user_messages</th><th>peak_daily_user_messages</th><th>peak_daily_date</th></tr></thead>
             <tbody id="monthlyBody"></tbody>
           </table>
         </div>
@@ -1116,7 +1181,7 @@ def build_dashboard_html(parsed: dict) -> str:
       const body = document.getElementById("monthlyBody");
       body.innerHTML = "";
       if (!MONTHLY.length) {
-        body.innerHTML = `<tr><td colspan="9" class="empty">データがありません</td></tr>`;
+        body.innerHTML = `<tr><td colspan="14" class="empty">データがありません</td></tr>`;
         return;
       }
       const maxUser = Math.max(...MONTHLY.map(r=>Number(r.user_messages || 0)), 1);
@@ -1131,6 +1196,11 @@ def build_dashboard_html(parsed: dict) -> str:
           </td>
           <td>${formatNumber(row.conversations)}</td>
           <td>${formatNumber(row.active_days)}</td>
+          <td>${formatNumber(row.user_tokens_est)}</td>
+          <td>${formatNumber(row.assistant_tokens_est)}</td>
+          <td>${formatNumber(row.total_tokens_est)}</td>
+          <td>${formatOneDecimal(row.avg_user_tokens_est)}</td>
+          <td>${formatOneDecimal(row.avg_tokens_per_active_day_est)}</td>
           <td>${formatOneDecimal(row.avg_per_elapsed_day)}</td>
           <td>${formatOneDecimal(row.avg_per_active_day)}</td>
           <td>${formatOneDecimal(row.median_daily_user_messages)}</td>

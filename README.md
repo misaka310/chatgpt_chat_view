@@ -91,3 +91,9 @@ start .\dashboard.html
 ```powershell
 python -m unittest tests.test_analyze_chat_export
 ```
+
+## Token estimate notes
+- `*_tokens_est` values are local estimates from exported message body text.
+- These estimates are **not** API billing tokens and must not be used for charge reconciliation.
+- If `tiktoken` is available, tokenizer `o200k_base` is used.
+- If `tiktoken` is unavailable, a character-count based fallback estimate is used.
