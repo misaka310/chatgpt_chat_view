@@ -16,3 +16,4 @@ keywords_*.csv
 conversations_index.csv
 dashboard.html
 monthly_summary.md
+out/

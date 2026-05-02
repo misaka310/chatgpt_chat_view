@@ -97,3 +97,6 @@ python -m unittest tests.test_analyze_chat_export
 - These estimates are **not** API billing tokens and must not be used for charge reconciliation.
 - If `tiktoken` is available, tokenizer `o200k_base` is used.
 - If `tiktoken` is unavailable, a character-count based fallback estimate is used.
+
+## Dashboard guide
+- See `docs/dashboard_guide.md` for UI reading order and term definitions.

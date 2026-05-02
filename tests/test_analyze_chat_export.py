@@ -34,6 +34,8 @@ class AnalyzeChatExportTest(unittest.TestCase):
                 "--rules",
                 str(rules_path),
                 "--rebuild",
+                "--codex-sessions-root",
+                str(temp / "empty_codex_sessions"),
             ]
             completed = subprocess.run(
                 cmd,
@@ -119,12 +121,73 @@ class AnalyzeChatExportTest(unittest.TestCase):
                 "category_daily.csv",
                 "keywords_monthly.csv",
                 "dashboard.html",
+                "out/codex_chat_match_2026-04_summary.md",
+                "out/codex_chat_match_2026-04_chat_prompts.csv",
+                "out/codex_chat_match_2026-04_codex_prompts.csv",
+                "out/codex_chat_match_2026-04_matches.csv",
+                "out/codex_chat_match_2026-04_unmatched_chat.csv",
+                "out/codex_chat_match_2026-04_unmatched_codex.csv",
             ):
                 self.assertTrue((output_dir / filename).exists(), f"{filename} was not generated")
 
             dashboard_html = (output_dir / "dashboard.html").read_text(encoding="utf-8")
             self.assertIn("total_tokens_est", dashboard_html)
             self.assertIn("avg_user_tokens_est", dashboard_html)
+            self.assertIn("Codex突合", dashboard_html)
+
+    def test_codex_match_filters_agents_injection(self) -> None:
+        repo_root = Path(__file__).resolve().parents[1]
+        rules_path = repo_root / "rules" / "category_keywords.json"
+        conversation_src = repo_root / "tests" / "fixtures" / "conversations.codex_match.sample.json"
+        codex_sessions = repo_root / "tests" / "fixtures" / "codex_sessions"
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp = Path(temp_dir)
+            input_dir = temp / "input"
+            output_dir = temp / "output"
+            input_dir.mkdir(parents=True, exist_ok=True)
+            output_dir.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(conversation_src, input_dir / "conversations.json")
+
+            cmd = [
+                sys.executable,
+                str(repo_root / "analyze_chat_export.py"),
+                "--input-dir",
+                str(input_dir),
+                "--output-dir",
+                str(output_dir),
+                "--timezone",
+                "Asia/Tokyo",
+                "--rules",
+                str(rules_path),
+                "--rebuild",
+                "--codex-sessions-root",
+                str(codex_sessions),
+                "--codex-match-month",
+                "2026-04",
+            ]
+            completed = subprocess.run(
+                cmd,
+                cwd=repo_root,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(
+                completed.returncode,
+                0,
+                msg=f"script failed:\nstdout:\n{completed.stdout}\nstderr:\n{completed.stderr}",
+            )
+
+            parsed = json.loads((output_dir / "parsed_summary.json").read_text(encoding="utf-8"))
+            summary = parsed["codex_match"]["summary"]
+            self.assertEqual(summary["chat_codex_prompt_count"], 1)
+            self.assertEqual(summary["codex_user_prompt_count"], 1)
+            self.assertEqual(summary["matched_prompt_count"], 1)
+            self.assertEqual(summary["chat_only_prompt_count"], 0)
+            self.assertEqual(summary["codex_only_prompt_count"], 0)
+            self.assertEqual(summary["exact_match_count"], 1)
+            self.assertEqual(summary["near_match_count"], 0)
 
 
 if __name__ == "__main__":

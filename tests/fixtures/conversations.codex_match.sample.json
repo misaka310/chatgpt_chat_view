@@ -1,0 +1,30 @@
+[
+  {
+    "conversation_id": "conv-match-001",
+    "title": "Codex prompt draft",
+    "mapping": {
+      "u1": {
+        "id": "u1",
+        "message": {
+          "id": "u1-message",
+          "author": { "role": "user" },
+          "create_time": 1775789700,
+          "content": { "parts": ["Please draft a Codex prompt."] }
+        }
+      },
+      "a1": {
+        "id": "a1",
+        "message": {
+          "id": "a1-message",
+          "author": { "role": "assistant" },
+          "create_time": 1775790000,
+          "content": {
+            "parts": [
+              "```text\nあなたは C:\\\\work\\\\sample-repo の実装担当です。\n目的: Fix failing tests on CI.\nやること:\n1. Identify failing test.\n2. Implement minimal fix.\nReview Questions:\n- Which test fails?\nDo not implement code outside scope.\n```"
+            ]
+          }
+        }
+      }
+    }
+  }
+]

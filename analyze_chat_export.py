@@ -1,12 +1,14 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 from __future__ import annotations
 
 import argparse
 import calendar
 import csv
+import difflib
 import hashlib
 import json
 import re
+import unicodedata
 from collections import Counter, defaultdict
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -38,7 +40,39 @@ MONTHLY_REQUIRED_KEYS = (
     "peak_daily_date",
 )
 DEFAULT_CATEGORY_RULES_PATH = Path("rules/category_keywords.json")
-TOKEN_PATTERN = re.compile(r"[A-Za-z0-9_+#./-]{2,}|[ぁ-んァ-ヶー一-龠]{2,}")
+TOKEN_PATTERN = re.compile(r"[A-Za-z0-9_+#./-]{2,}|[縺・繧薙ぃ-繝ｶ繝ｼ荳-鮴]{2,}")
+DEFAULT_CODEX_SESSIONS_ROOT = Path.home() / ".codex" / "sessions"
+DEFAULT_MATCH_MONTH = "2026-04"
+JST = timezone(timedelta(hours=9), name="Asia/Tokyo")
+CODEX_PROMPT_HINTS = (
+    "you are",
+    "codex",
+    "target repository:",
+    "repository:",
+    "objective:",
+    "purpose:",
+    "context:",
+    "todo:",
+    "tasks:",
+    "prohibited",
+    "success criteria",
+    "final report",
+    "changed files",
+    "verification",
+    "ai review request",
+    "ai_review_request_id",
+    "repository",
+    "review questions",
+    "do not implement code",
+)
+ASSISTANT_PROMPT_START_HINTS = (
+    "you are",
+    "target repository:",
+    "repository:",
+    "objective:",
+    "purpose:",
+    "ai review request",
+)
 
 
 def stream_json_array(path: Path, marker: Optional[str] = None) -> Iterator[dict]:
@@ -388,6 +422,756 @@ def median_value(values: list[int]) -> float:
     if len(ordered) % 2 == 1:
         return float(ordered[mid])
     return float((ordered[mid - 1] + ordered[mid]) / 2.0)
+
+
+def parse_month_range_jst(month: str) -> tuple[datetime, datetime]:
+    if not re.match(r"^\d{4}-\d{2}$", month):
+        raise ValueError(f"Invalid month format: {month}")
+    year = int(month[:4])
+    mon = int(month[5:7])
+    if mon < 1 or mon > 12:
+        raise ValueError(f"Invalid month value: {month}")
+    start = datetime(year, mon, 1, 0, 0, 0, tzinfo=JST)
+    if mon == 12:
+        end = datetime(year + 1, 1, 1, 0, 0, 0, tzinfo=JST)
+    else:
+        end = datetime(year, mon + 1, 1, 0, 0, 0, tzinfo=JST)
+    return start, end
+
+
+def sha256_hex(text: str) -> str:
+    return hashlib.sha256((text or "").encode("utf-8")).hexdigest()
+
+
+def build_snippet(text: str, limit: int = 140) -> str:
+    compact = re.sub(r"\s+", " ", (text or "").strip())
+    if len(compact) <= limit:
+        return compact
+    if limit < 10:
+        return compact[:limit]
+    return compact[: limit - 3] + "..."
+
+
+def extract_repo_hint(text: str) -> str:
+    if not text:
+        return ""
+    path_match = re.search(r"[A-Za-z]:\\[A-Za-z0-9_.\-\\]+", text)
+    if path_match:
+        return path_match.group(0).rstrip("\\")
+    repo_line = re.search(
+        r"(?im)^(?:target repository|repository|repo|cwd_or_repo|cwd)\s*[:：]\s*(.+?)\s*$",
+        text,
+    )
+    if repo_line:
+        return repo_line.group(1).strip()[:240]
+    return ""
+
+
+def strip_markdown_fences(text: str) -> str:
+    if not text:
+        return ""
+    return re.sub(r"```[^\n]*\n(.*?)```", lambda m: m.group(1), text, flags=re.S)
+
+
+def normalize_prompt_text(text: str) -> str:
+    value = (text or "").strip()
+    if not value:
+        return ""
+    value = value.replace("\r\n", "\n").replace("\r", "\n")
+    value = unicodedata.normalize("NFKC", value)
+    value = strip_markdown_fences(value)
+    value = re.sub(r"\\{2,}", r"\\", value)
+    value = re.sub(r"(?m)^\s*>+\s?", "", value)
+    value = re.sub(r"[`*_~]+", "", value)
+    value = re.sub(r'[\"\'“”‘’「」『』]+', "", value)
+    value = re.sub(r"[ \t]+", " ", value)
+    value = re.sub(r"\n{3,}", "\n\n", value)
+    value = re.sub(r"(?is)\n+(?:note|notes|please adjust|you can edit this prompt).*$", "", value)
+    value = "\n".join(line.strip() for line in value.split("\n"))
+    value = value.strip().lower()
+    value = re.sub(r"\s+", " ", value)
+    return value
+
+
+def count_prompt_hints(text: str) -> int:
+    lowered = (text or "").lower()
+    return sum(1 for hint in CODEX_PROMPT_HINTS if hint in lowered)
+
+
+def is_codex_prompt_candidate(text: str) -> bool:
+    stripped = (text or "").strip()
+    if len(stripped) < 80:
+        return False
+    lowered = stripped.lower()
+    if "codex" not in lowered and "ai review request" not in lowered and "do not implement code" not in lowered:
+        return False
+    section_hits = 0
+    for marker in (
+        "purpose:",
+        "objective:",
+        "target repository:",
+        "repository:",
+        "tasks:",
+        "todo:",
+        "review questions",
+        "success criteria",
+        "do not implement code",
+        "目的:",
+        "やること:",
+        "前提:",
+        "成功条件:",
+        "禁止事項:",
+        "変更ファイル一覧",
+    ):
+        if marker in lowered:
+            section_hits += 1
+    return section_hits >= 2
+
+
+def estimate_prompt_confidence(text: str) -> float:
+    stripped = (text or "").strip()
+    hint_count = count_prompt_hints(stripped)
+    confidence = 0.35 + min(0.45, hint_count * 0.11)
+    if stripped.lower().startswith("you are") or stripped.startswith("あなたは"):
+        confidence += 0.1
+    if "objective:" in stripped.lower() or "tasks:" in stripped.lower() or "目的:" in stripped:
+        confidence += 0.08
+    if "ai review request" in stripped.lower():
+        confidence += 0.08
+    if len(stripped) > 400:
+        confidence += 0.05
+    return round(min(0.99, confidence), 3)
+
+
+def extract_codex_prompt_candidates_from_assistant(text: str) -> list[str]:
+    body = (text or "").strip()
+    if not body:
+        return []
+
+    candidates: list[str] = []
+    for match in re.finditer(r"```[^\n]*\n(.*?)```", body, flags=re.S):
+        block = (match.group(1) or "").strip()
+        if is_codex_prompt_candidate(block):
+            candidates.append(block)
+
+    if candidates:
+        pass
+    elif is_codex_prompt_candidate(body):
+        candidates.append(body)
+    else:
+        lines = body.splitlines()
+        starts = []
+        for idx, line in enumerate(lines):
+            lowered = line.strip().lower()
+            if not lowered:
+                continue
+            if any(lowered.startswith(hint) for hint in ASSISTANT_PROMPT_START_HINTS):
+                starts.append(idx)
+        for s_idx, start in enumerate(starts):
+            end = starts[s_idx + 1] if s_idx + 1 < len(starts) else len(lines)
+            chunk = "\n".join(lines[start:end]).strip()
+            if is_codex_prompt_candidate(chunk):
+                candidates.append(chunk)
+
+    # Keep order but drop exact duplicates.
+    unique: list[str] = []
+    seen = set()
+    for candidate in candidates:
+        key = sha256_hex(candidate)
+        if key in seen:
+            continue
+        seen.add(key)
+        unique.append(candidate)
+    return unique
+
+
+def in_range_jst(dt: datetime, start_jst: datetime, end_jst: datetime) -> bool:
+    return start_jst <= dt < end_jst
+
+
+def parse_iso8601_to_tz(value: str, tz_obj) -> Optional[datetime]:
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(tz_obj)
+
+
+def extract_text_from_response_content(content: Any) -> str:
+    if not isinstance(content, list):
+        return ""
+    parts = []
+    for item in content:
+        if not isinstance(item, dict):
+            continue
+        text = item.get("text")
+        if isinstance(text, str) and text.strip():
+            parts.append(text.strip())
+    return "\n".join(parts).strip()
+
+
+def is_injected_or_sensitive_prompt(text: str) -> bool:
+    lowered = (text or "").lower()
+    if not lowered.strip():
+        return True
+    if lowered.startswith("# agents.md instructions"):
+        return True
+    if "<instructions>" in lowered and "agents.md" in lowered:
+        return True
+    if "you are codex, a coding agent" in lowered:
+        return True
+    if "filesystem sandboxing" in lowered and "approval policy" in lowered:
+        return True
+    if "sandbox_mode" in lowered and "writable roots" in lowered:
+        return True
+    if "auth.json" in lowered or ".sandbox-secrets" in lowered:
+        return True
+    if ("secret" in lowered or "api key" in lowered or "token" in lowered or "auth" in lowered) and (
+        "instruction" in lowered or "permission" in lowered or "sandbox" in lowered
+    ):
+        return True
+    return False
+
+
+def collect_chat_codex_prompts(
+    paths: Iterable[Path],
+    marker: Optional[str],
+    local_tz,
+    start_jst: datetime,
+    end_jst: datetime,
+) -> list[dict]:
+    prompts: list[dict] = []
+    seen_message_keys: set[str] = set()
+    total_conversation_objects = 0
+    prompt_index = 1
+
+    for path in paths:
+        file_marker = marker if path.name.lower().endswith(".html") else None
+        for conversation in stream_json_array(path, marker=file_marker):
+            total_conversation_objects += 1
+            conv_id = (
+                conversation.get("conversation_id")
+                or conversation.get("id")
+                or f"conv-{total_conversation_objects}"
+            )
+            conv_id = str(conv_id)
+            title = safe_title(conversation.get("title"), f"(untitled:{conv_id[:16]})")
+            mapping = conversation.get("mapping")
+            if not isinstance(mapping, dict):
+                continue
+
+            for node in mapping.values():
+                if not isinstance(node, dict):
+                    continue
+                message = node.get("message")
+                if not isinstance(message, dict):
+                    continue
+                author = message.get("author") or {}
+                role = normalize_role(author.get("role") if isinstance(author, dict) else None)
+                if role != "assistant":
+                    continue
+
+                text = extract_message_text(message)
+                msg_key = build_message_dedupe_key(conv_id, message, role, text)
+                if msg_key in seen_message_keys:
+                    continue
+                seen_message_keys.add(msg_key)
+
+                ts = pick_timestamp(message)
+                if ts is None:
+                    continue
+                dt = datetime.fromtimestamp(ts, tz=timezone.utc).astimezone(local_tz)
+                if not in_range_jst(dt, start_jst, end_jst):
+                    continue
+
+                candidates = extract_codex_prompt_candidates_from_assistant(text)
+                if not candidates:
+                    continue
+
+                message_id = message.get("id")
+                if not isinstance(message_id, str) or not message_id.strip():
+                    node_id = node.get("id")
+                    message_id = str(node_id) if node_id else ""
+
+                for prompt_text in candidates:
+                    if len(prompt_text) > 20000:
+                        continue
+                    normalized = normalize_prompt_text(prompt_text)
+                    if not normalized:
+                        continue
+                    prompts.append(
+                        {
+                            "chat_prompt_id": f"chat-{prompt_index:06d}",
+                            "date_jst": dt.strftime("%Y-%m-%d %H:%M:%S"),
+                            "date_key": dt.strftime("%Y-%m-%d"),
+                            "conversation_id": conv_id,
+                            "conversation_title": title,
+                            "message_id": message_id,
+                            "prompt_text": prompt_text,
+                            "prompt_hash": sha256_hex(prompt_text),
+                            "normalized_prompt_text": normalized,
+                            "normalized_hash": sha256_hex(normalized),
+                            "snippet": build_snippet(prompt_text),
+                            "estimated_repo": extract_repo_hint(prompt_text),
+                            "confidence": estimate_prompt_confidence(prompt_text),
+                            "_dt": dt,
+                        }
+                    )
+                    prompt_index += 1
+
+    prompts.sort(key=lambda row: (row["date_jst"], row["chat_prompt_id"]))
+    return prompts
+
+
+def collect_rollout_files(codex_sessions_root: Path, month: str) -> list[Path]:
+    month_path = codex_sessions_root / month[:4] / month[5:7]
+    if not month_path.exists():
+        return []
+    return sorted(month_path.glob("**/rollout-*.jsonl"))
+
+
+def collect_codex_user_prompts(
+    rollout_paths: Iterable[Path],
+    local_tz,
+    start_jst: datetime,
+    end_jst: datetime,
+) -> list[dict]:
+    prompts: list[dict] = []
+    prompt_index = 1
+
+    for rollout_path in rollout_paths:
+        session_id = rollout_path.stem.replace("rollout-", "")
+        cwd_hint = ""
+        primary_seen_hashes: set[str] = set()
+        secondary_buffer: list[tuple[int, datetime, str]] = []
+
+        with rollout_path.open("r", encoding="utf-8") as f:
+            for event_index, line in enumerate(f, start=1):
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    record = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+
+                payload = record.get("payload")
+                if not isinstance(payload, dict):
+                    continue
+
+                record_type = record.get("type")
+                event_type = payload.get("type")
+                ts = parse_iso8601_to_tz(str(record.get("timestamp") or ""), local_tz)
+                if ts is None:
+                    continue
+                if not in_range_jst(ts, start_jst, end_jst):
+                    continue
+
+                if record_type == "session_meta":
+                    sid = payload.get("id")
+                    if isinstance(sid, str) and sid.strip():
+                        session_id = sid.strip()
+                    cwd = payload.get("cwd")
+                    if isinstance(cwd, str) and cwd.strip():
+                        cwd_hint = cwd.strip()
+                    continue
+
+                if record_type == "event_msg" and event_type == "user_message":
+                    text = payload.get("message")
+                    if not isinstance(text, str):
+                        text = ""
+                    text = text.strip()
+                    if not text or is_injected_or_sensitive_prompt(text):
+                        continue
+                    normalized = normalize_prompt_text(text)
+                    if not normalized:
+                        continue
+                    primary_seen_hashes.add(sha256_hex(normalized))
+                    prompts.append(
+                        {
+                            "codex_prompt_id": f"codex-{prompt_index:06d}",
+                            "date_jst": ts.strftime("%Y-%m-%d %H:%M:%S"),
+                            "date_key": ts.strftime("%Y-%m-%d"),
+                            "rollout_path": str(rollout_path),
+                            "session_id": session_id,
+                            "event_index": event_index,
+                            "prompt_text": text,
+                            "prompt_hash": sha256_hex(text),
+                            "normalized_prompt_text": normalized,
+                            "normalized_hash": sha256_hex(normalized),
+                            "snippet": build_snippet(text),
+                            "cwd_or_repo": cwd_hint,
+                            "confidence": 1.0,
+                            "_dt": ts,
+                        }
+                    )
+                    prompt_index += 1
+                    continue
+
+                if record_type == "response_item":
+                    if event_type == "message" and str(payload.get("role") or "").lower() == "user":
+                        text = extract_text_from_response_content(payload.get("content"))
+                        if not text or is_injected_or_sensitive_prompt(text):
+                            continue
+                        secondary_buffer.append((event_index, ts, text))
+
+        # Secondary source is used only when primary records do not have the same normalized text.
+        for event_index, ts, text in secondary_buffer:
+            normalized = normalize_prompt_text(text)
+            if not normalized:
+                continue
+            if sha256_hex(normalized) in primary_seen_hashes:
+                continue
+            prompts.append(
+                {
+                    "codex_prompt_id": f"codex-{prompt_index:06d}",
+                    "date_jst": ts.strftime("%Y-%m-%d %H:%M:%S"),
+                    "date_key": ts.strftime("%Y-%m-%d"),
+                    "rollout_path": str(rollout_path),
+                    "session_id": session_id,
+                    "event_index": event_index,
+                    "prompt_text": text,
+                    "prompt_hash": sha256_hex(text),
+                    "normalized_prompt_text": normalized,
+                    "normalized_hash": sha256_hex(normalized),
+                    "snippet": build_snippet(text),
+                    "cwd_or_repo": cwd_hint,
+                    "confidence": 0.8,
+                    "_dt": ts,
+                }
+            )
+            prompt_index += 1
+
+    prompts.sort(key=lambda row: (row["date_jst"], row["rollout_path"], row["event_index"]))
+    return prompts
+
+
+def split_path_tail(path_value: str, max_len: int = 80) -> str:
+    value = (path_value or "").strip()
+    if len(value) <= max_len:
+        return value
+    return "..." + value[-(max_len - 3) :]
+
+
+def build_match_score(chat: dict, codex: dict) -> tuple[float, float]:
+    ratio = difflib.SequenceMatcher(
+        None,
+        chat.get("normalized_prompt_text", ""),
+        codex.get("normalized_prompt_text", ""),
+    ).ratio()
+    chat_repo = (chat.get("estimated_repo") or "").lower()
+    codex_repo = (codex.get("cwd_or_repo") or "").lower()
+    repo_bonus = 0.0
+    if chat_repo and codex_repo and (chat_repo in codex_repo or codex_repo in chat_repo):
+        repo_bonus = 0.04
+    gap_hours = abs((chat["_dt"] - codex["_dt"]).total_seconds()) / 3600.0
+    time_penalty = min(0.08, gap_hours * 0.0015)
+    score = ratio + repo_bonus - time_penalty
+    return score, ratio
+
+
+def match_chat_and_codex_prompts(chat_prompts: list[dict], codex_prompts: list[dict]) -> dict:
+    matches: list[dict] = []
+    chat_unmatched = {row["chat_prompt_id"]: row for row in chat_prompts}
+    codex_unmatched = {row["codex_prompt_id"]: row for row in codex_prompts}
+
+    chat_by_hash: Dict[str, list[dict]] = defaultdict(list)
+    codex_by_hash: Dict[str, list[dict]] = defaultdict(list)
+    for row in chat_prompts:
+        chat_by_hash[row["normalized_hash"]].append(row)
+    for row in codex_prompts:
+        codex_by_hash[row["normalized_hash"]].append(row)
+
+    match_index = 1
+    for normalized_hash, chat_rows in chat_by_hash.items():
+        codex_rows = codex_by_hash.get(normalized_hash)
+        if not codex_rows:
+            continue
+        ordered_chat = sorted(chat_rows, key=lambda r: r["_dt"])
+        ordered_codex = sorted(codex_rows, key=lambda r: r["_dt"])
+        pair_count = min(len(ordered_chat), len(ordered_codex))
+        for idx in range(pair_count):
+            chat_row = ordered_chat[idx]
+            codex_row = ordered_codex[idx]
+            matches.append(
+                {
+                    "match_id": f"match-{match_index:06d}",
+                    "match_type": "exact_match",
+                    "confidence": 1.0,
+                    "similarity": 1.0,
+                    "chat_prompt_id": chat_row["chat_prompt_id"],
+                    "codex_prompt_id": codex_row["codex_prompt_id"],
+                    "date_jst": chat_row["date_jst"],
+                    "date_key": chat_row["date_key"],
+                    "conversation_title": chat_row.get("conversation_title", ""),
+                    "rollout_path": codex_row.get("rollout_path", ""),
+                    "estimated_repo": chat_row.get("estimated_repo", ""),
+                    "cwd_or_repo": codex_row.get("cwd_or_repo", ""),
+                    "snippet": chat_row.get("snippet", ""),
+                }
+            )
+            chat_unmatched.pop(chat_row["chat_prompt_id"], None)
+            codex_unmatched.pop(codex_row["codex_prompt_id"], None)
+            match_index += 1
+
+    candidate_pairs = []
+    for chat_row in chat_unmatched.values():
+        chat_text = chat_row.get("normalized_prompt_text", "")
+        chat_len = len(chat_text)
+        for codex_row in codex_unmatched.values():
+            codex_text = codex_row.get("normalized_prompt_text", "")
+            codex_len = len(codex_text)
+            if not chat_len or not codex_len:
+                continue
+            if min(chat_len, codex_len) / max(chat_len, codex_len) < 0.45:
+                continue
+            if abs((chat_row["_dt"] - codex_row["_dt"]).total_seconds()) > 14 * 24 * 3600:
+                continue
+            score, ratio = build_match_score(chat_row, codex_row)
+            if ratio < 0.88:
+                continue
+            candidate_pairs.append((score, ratio, chat_row["chat_prompt_id"], codex_row["codex_prompt_id"]))
+    candidate_pairs.sort(reverse=True, key=lambda row: row[0])
+
+    used_chat = set()
+    used_codex = set()
+    for score, ratio, chat_id, codex_id in candidate_pairs:
+        if chat_id in used_chat or codex_id in used_codex:
+            continue
+        chat_row = chat_unmatched.get(chat_id)
+        codex_row = codex_unmatched.get(codex_id)
+        if chat_row is None or codex_row is None:
+            continue
+        used_chat.add(chat_id)
+        used_codex.add(codex_id)
+        matches.append(
+            {
+                "match_id": f"match-{match_index:06d}",
+                "match_type": "near_match",
+                "confidence": round(max(0.0, min(0.99, score)), 3),
+                "similarity": round(ratio, 3),
+                "chat_prompt_id": chat_row["chat_prompt_id"],
+                "codex_prompt_id": codex_row["codex_prompt_id"],
+                "date_jst": chat_row["date_jst"],
+                "date_key": chat_row["date_key"],
+                "conversation_title": chat_row.get("conversation_title", ""),
+                "rollout_path": codex_row.get("rollout_path", ""),
+                "estimated_repo": chat_row.get("estimated_repo", ""),
+                "cwd_or_repo": codex_row.get("cwd_or_repo", ""),
+                "snippet": chat_row.get("snippet", ""),
+            }
+        )
+        chat_unmatched.pop(chat_id, None)
+        codex_unmatched.pop(codex_id, None)
+        match_index += 1
+
+    matches.sort(key=lambda row: (row["date_jst"], row["match_type"], row["match_id"]))
+    unmatched_chat = sorted(chat_unmatched.values(), key=lambda row: (row["date_jst"], row["chat_prompt_id"]))
+    unmatched_codex = sorted(
+        codex_unmatched.values(),
+        key=lambda row: (row["date_jst"], row["rollout_path"], row["event_index"]),
+    )
+    return {
+        "matches": matches,
+        "unmatched_chat": unmatched_chat,
+        "unmatched_codex": unmatched_codex,
+    }
+
+
+def aggregate_daily_counts(chat_prompts: list[dict], codex_prompts: list[dict], matches: list[dict]) -> list[dict]:
+    day_rows: Dict[str, dict] = defaultdict(
+        lambda: {
+            "date_jst": "",
+            "chat_codex_prompt_count": 0,
+            "codex_user_prompt_count": 0,
+            "matched_prompt_count": 0,
+            "chat_only_prompt_count": 0,
+            "codex_only_prompt_count": 0,
+        }
+    )
+
+    for row in chat_prompts:
+        day = row["date_key"]
+        acc = day_rows[day]
+        acc["date_jst"] = day
+        acc["chat_codex_prompt_count"] += 1
+    for row in codex_prompts:
+        day = row["date_key"]
+        acc = day_rows[day]
+        acc["date_jst"] = day
+        acc["codex_user_prompt_count"] += 1
+    for row in matches:
+        day = row["date_key"]
+        acc = day_rows[day]
+        acc["date_jst"] = day
+        acc["matched_prompt_count"] += 1
+
+    for day, acc in day_rows.items():
+        acc["chat_only_prompt_count"] = acc["chat_codex_prompt_count"] - acc["matched_prompt_count"]
+        acc["codex_only_prompt_count"] = acc["codex_user_prompt_count"] - acc["matched_prompt_count"]
+
+    return [day_rows[day] for day in sorted(day_rows.keys())]
+
+
+def aggregate_repo_counts(chat_prompts: list[dict], codex_prompts: list[dict], matches: list[dict]) -> list[dict]:
+    rows: Dict[str, dict] = defaultdict(
+        lambda: {
+            "repo_or_path": "",
+            "chat_codex_prompt_count": 0,
+            "codex_user_prompt_count": 0,
+            "matched_prompt_count": 0,
+            "chat_only_prompt_count": 0,
+            "codex_only_prompt_count": 0,
+        }
+    )
+
+    def repo_key(value: str) -> str:
+        stripped = (value or "").strip()
+        return stripped if stripped else "(unknown)"
+
+    for row in chat_prompts:
+        key = repo_key(row.get("estimated_repo", ""))
+        acc = rows[key]
+        acc["repo_or_path"] = key
+        acc["chat_codex_prompt_count"] += 1
+    for row in codex_prompts:
+        key = repo_key(row.get("cwd_or_repo", ""))
+        acc = rows[key]
+        acc["repo_or_path"] = key
+        acc["codex_user_prompt_count"] += 1
+    for row in matches:
+        keys = {
+            repo_key(row.get("estimated_repo", "")),
+            repo_key(row.get("cwd_or_repo", "")),
+        }
+        for key in keys:
+            if key == "(unknown)":
+                continue
+            acc = rows[key]
+            acc["repo_or_path"] = key
+            acc["matched_prompt_count"] += 1
+
+    for key, acc in rows.items():
+        acc["chat_only_prompt_count"] = acc["chat_codex_prompt_count"] - acc["matched_prompt_count"]
+        acc["codex_only_prompt_count"] = acc["codex_user_prompt_count"] - acc["matched_prompt_count"]
+        if key == "(unknown)" and not (
+            acc["chat_codex_prompt_count"] or acc["codex_user_prompt_count"] or acc["matched_prompt_count"]
+        ):
+            continue
+
+    return sorted(rows.values(), key=lambda row: row["repo_or_path"].lower())
+
+
+def aggregate_conversation_counts(chat_prompts: list[dict], matches: list[dict]) -> list[dict]:
+    matched_chat_ids = {row["chat_prompt_id"] for row in matches}
+    rows: Dict[str, dict] = defaultdict(
+        lambda: {
+            "conversation_title": "",
+            "chat_codex_prompt_count": 0,
+            "matched_prompt_count": 0,
+            "chat_only_prompt_count": 0,
+        }
+    )
+
+    for row in chat_prompts:
+        title = row.get("conversation_title", "") or "(untitled)"
+        acc = rows[title]
+        acc["conversation_title"] = title
+        acc["chat_codex_prompt_count"] += 1
+        if row["chat_prompt_id"] in matched_chat_ids:
+            acc["matched_prompt_count"] += 1
+
+    for acc in rows.values():
+        acc["chat_only_prompt_count"] = acc["chat_codex_prompt_count"] - acc["matched_prompt_count"]
+
+    return sorted(rows.values(), key=lambda row: (-row["chat_codex_prompt_count"], row["conversation_title"]))
+
+
+def aggregate_rollout_counts(codex_prompts: list[dict], matches: list[dict]) -> list[dict]:
+    matched_codex_ids = {row["codex_prompt_id"] for row in matches}
+    rows: Dict[str, dict] = defaultdict(
+        lambda: {
+            "rollout_path": "",
+            "codex_user_prompt_count": 0,
+            "matched_prompt_count": 0,
+            "codex_only_prompt_count": 0,
+        }
+    )
+
+    for row in codex_prompts:
+        rollout = row.get("rollout_path", "")
+        acc = rows[rollout]
+        acc["rollout_path"] = rollout
+        acc["codex_user_prompt_count"] += 1
+        if row["codex_prompt_id"] in matched_codex_ids:
+            acc["matched_prompt_count"] += 1
+
+    for acc in rows.values():
+        acc["codex_only_prompt_count"] = acc["codex_user_prompt_count"] - acc["matched_prompt_count"]
+
+    return sorted(rows.values(), key=lambda row: (-row["codex_user_prompt_count"], row["rollout_path"]))
+
+
+def build_codex_match_report(
+    input_paths: Iterable[Path],
+    marker: Optional[str],
+    local_tz,
+    codex_sessions_root: Path,
+    month: str,
+) -> dict:
+    start_jst, end_jst = parse_month_range_jst(month)
+    chat_prompts = collect_chat_codex_prompts(input_paths, marker, local_tz, start_jst, end_jst)
+    rollout_paths = collect_rollout_files(codex_sessions_root, month)
+    codex_prompts = collect_codex_user_prompts(rollout_paths, local_tz, start_jst, end_jst)
+
+    match_result = match_chat_and_codex_prompts(chat_prompts, codex_prompts)
+    matches = match_result["matches"]
+    unmatched_chat = match_result["unmatched_chat"]
+    unmatched_codex = match_result["unmatched_codex"]
+
+    exact_count = sum(1 for row in matches if row["match_type"] == "exact_match")
+    near_count = sum(1 for row in matches if row["match_type"] == "near_match")
+
+    summary = {
+        "month": month,
+        "range_start_jst": start_jst.strftime("%Y-%m-%d %H:%M:%S"),
+        "range_end_jst": end_jst.strftime("%Y-%m-%d %H:%M:%S"),
+        "chat_codex_prompt_count": len(chat_prompts),
+        "codex_user_prompt_count": len(codex_prompts),
+        "matched_prompt_count": len(matches),
+        "chat_only_prompt_count": len(unmatched_chat),
+        "codex_only_prompt_count": len(unmatched_codex),
+        "exact_match_count": exact_count,
+        "near_match_count": near_count,
+    }
+
+    def drop_internal(rows: list[dict]) -> list[dict]:
+        sanitized = []
+        for row in rows:
+            item = {k: v for k, v in row.items() if not k.startswith("_")}
+            sanitized.append(item)
+        return sanitized
+
+    return {
+        "summary": summary,
+        "daily": aggregate_daily_counts(chat_prompts, codex_prompts, matches),
+        "repo": aggregate_repo_counts(chat_prompts, codex_prompts, matches),
+        "conversation": aggregate_conversation_counts(chat_prompts, matches),
+        "rollout": aggregate_rollout_counts(codex_prompts, matches),
+        "chat_prompts": drop_internal(chat_prompts),
+        "codex_prompts": drop_internal(codex_prompts),
+        "matches": drop_internal(matches),
+        "unmatched_chat": drop_internal(unmatched_chat),
+        "unmatched_codex": drop_internal(unmatched_codex),
+        "meta": {
+            "codex_sessions_root": str(codex_sessions_root),
+            "rollout_file_count": len(rollout_paths),
+        },
+    }
 
 
 def collect_stats_from_inputs(paths: Iterable[Path], marker: Optional[str], local_tz, rules: dict) -> dict:
@@ -830,16 +1614,16 @@ def write_monthly_summary_md(path: Path, parsed: dict) -> None:
     lines = [
         "# Monthly Usage Summary",
         "",
-        "## 集計ルール",
+        "## Definitions",
         "- user_messages: `author.role == user`",
-        "- conversations: 期間内に user メッセージが1件以上ある conversation_id のユニーク数",
-        "- active_days: 期間内に user メッセージが1件以上あるローカル日付のユニーク数",
-        "- timestamp: `create_time` 優先、なければ `update_time`",
+        "- conversations: unique conversation_id with >=1 user message in period",
+        "- active_days: unique local dates with >=1 user message in period",
+        "- timestamp: `create_time` first, fallback to `update_time`",
         "",
-        "## 月次",
+        "## Monthly",
     ]
     if not monthly:
-        lines.append("- データなし")
+        lines.append("- no data")
     else:
         for row in monthly:
             lines.append(
@@ -848,13 +1632,203 @@ def write_monthly_summary_md(path: Path, parsed: dict) -> None:
     lines.extend(
         [
             "",
-            "## 生成情報",
+            "## Metadata",
             f"- timezone: `{parsed['meta'].get('timezone', 'unknown')}`",
             f"- generated_at: `{parsed['meta'].get('generated_at', 'unknown')}`",
             "",
         ]
     )
     path.write_text("\n".join(lines), encoding="utf-8")
+
+
+def write_codex_match_outputs(output_dir: Path, codex_match: Optional[dict]) -> None:
+    out_dir = output_dir / "out"
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    summary_path = out_dir / "codex_chat_match_2026-04_summary.md"
+    chat_csv = out_dir / "codex_chat_match_2026-04_chat_prompts.csv"
+    codex_csv = out_dir / "codex_chat_match_2026-04_codex_prompts.csv"
+    matches_csv = out_dir / "codex_chat_match_2026-04_matches.csv"
+    unmatched_chat_csv = out_dir / "codex_chat_match_2026-04_unmatched_chat.csv"
+    unmatched_codex_csv = out_dir / "codex_chat_match_2026-04_unmatched_codex.csv"
+
+    if not codex_match:
+        write_csv(chat_csv, ["chat_prompt_id"], [])
+        write_csv(codex_csv, ["codex_prompt_id"], [])
+        write_csv(matches_csv, ["match_id"], [])
+        write_csv(unmatched_chat_csv, ["chat_prompt_id"], [])
+        write_csv(unmatched_codex_csv, ["codex_prompt_id"], [])
+        summary_path.write_text("# Codex遯∝粋繧ｵ繝槭Μ繝ｼ\n\n繝・・繧ｿ縺後≠繧翫∪縺帙ｓ縲・n", encoding="utf-8")
+        return
+
+    summary = codex_match.get("summary", {})
+    chat_prompts = codex_match.get("chat_prompts", [])
+    codex_prompts = codex_match.get("codex_prompts", [])
+    matches = codex_match.get("matches", [])
+    unmatched_chat = codex_match.get("unmatched_chat", [])
+    unmatched_codex = codex_match.get("unmatched_codex", [])
+
+    write_csv(
+        chat_csv,
+        [
+            "chat_prompt_id",
+            "date_jst",
+            "conversation_id",
+            "conversation_title",
+            "message_id",
+            "prompt_hash",
+            "normalized_hash",
+            "snippet",
+            "estimated_repo",
+            "confidence",
+        ],
+        [
+            [
+                row.get("chat_prompt_id", ""),
+                row.get("date_jst", ""),
+                row.get("conversation_id", ""),
+                row.get("conversation_title", ""),
+                row.get("message_id", ""),
+                row.get("prompt_hash", ""),
+                row.get("normalized_hash", ""),
+                row.get("snippet", ""),
+                row.get("estimated_repo", ""),
+                row.get("confidence", ""),
+            ]
+            for row in chat_prompts
+        ],
+    )
+
+    write_csv(
+        codex_csv,
+        [
+            "codex_prompt_id",
+            "date_jst",
+            "rollout_path",
+            "session_id",
+            "event_index",
+            "prompt_hash",
+            "normalized_hash",
+            "snippet",
+            "cwd_or_repo",
+            "confidence",
+        ],
+        [
+            [
+                row.get("codex_prompt_id", ""),
+                row.get("date_jst", ""),
+                row.get("rollout_path", ""),
+                row.get("session_id", ""),
+                row.get("event_index", ""),
+                row.get("prompt_hash", ""),
+                row.get("normalized_hash", ""),
+                row.get("snippet", ""),
+                row.get("cwd_or_repo", ""),
+                row.get("confidence", ""),
+            ]
+            for row in codex_prompts
+        ],
+    )
+
+    write_csv(
+        matches_csv,
+        [
+            "match_id",
+            "match_type",
+            "confidence",
+            "similarity",
+            "chat_prompt_id",
+            "codex_prompt_id",
+            "date_jst",
+            "conversation_title",
+            "rollout_path",
+            "estimated_repo",
+            "cwd_or_repo",
+            "snippet",
+        ],
+        [
+            [
+                row.get("match_id", ""),
+                row.get("match_type", ""),
+                row.get("confidence", ""),
+                row.get("similarity", ""),
+                row.get("chat_prompt_id", ""),
+                row.get("codex_prompt_id", ""),
+                row.get("date_jst", ""),
+                row.get("conversation_title", ""),
+                row.get("rollout_path", ""),
+                row.get("estimated_repo", ""),
+                row.get("cwd_or_repo", ""),
+                row.get("snippet", ""),
+            ]
+            for row in matches
+        ],
+    )
+
+    write_csv(
+        unmatched_chat_csv,
+        [
+            "chat_prompt_id",
+            "date_jst",
+            "conversation_title",
+            "estimated_repo",
+            "snippet",
+        ],
+        [
+            [
+                row.get("chat_prompt_id", ""),
+                row.get("date_jst", ""),
+                row.get("conversation_title", ""),
+                row.get("estimated_repo", ""),
+                row.get("snippet", ""),
+            ]
+            for row in unmatched_chat
+        ],
+    )
+
+    write_csv(
+        unmatched_codex_csv,
+        [
+            "codex_prompt_id",
+            "date_jst",
+            "rollout_path",
+            "cwd_or_repo",
+            "snippet",
+        ],
+        [
+            [
+                row.get("codex_prompt_id", ""),
+                row.get("date_jst", ""),
+                row.get("rollout_path", ""),
+                row.get("cwd_or_repo", ""),
+                row.get("snippet", ""),
+            ]
+            for row in unmatched_codex
+        ],
+    )
+
+    lines = [
+        "# 2026-04 Codex Match Summary",
+        "",
+        f"- Range (JST): {summary.get('range_start_jst', '')} ~ {summary.get('range_end_jst', '')}",
+        f"- chat_codex_prompt_count: {summary.get('chat_codex_prompt_count', 0)}",
+        f"- codex_user_prompt_count: {summary.get('codex_user_prompt_count', 0)}",
+        f"- matched_prompt_count: {summary.get('matched_prompt_count', 0)}",
+        f"- chat_only_prompt_count: {summary.get('chat_only_prompt_count', 0)}",
+        f"- codex_only_prompt_count: {summary.get('codex_only_prompt_count', 0)}",
+        f"- exact_match_count: {summary.get('exact_match_count', 0)}",
+        f"- near_match_count: {summary.get('near_match_count', 0)}",
+        "",
+        "## 注意",
+        "- ChatGPT側の数は「ChatGPT内で生成されたCodex向け完成プロンプト数」。",
+        "- Codex側の数は「Codexローカルログに残っているuser_message数」。",
+        "- matchedは「正規化後に一致または高類似と判定されたもの」。",
+        "- chat_onlyは「作ったが投げていない可能性、または編集して投げたため一致しなかった可能性」。",
+        "- codex_onlyは「ChatGPTを経由せずCodexへ直接入力した可能性、またはChatGPT側抽出に失敗した可能性」。",
+        "- これはOpenAIの課金トークンや公式利用回数ではなく、ローカルログ解析による実用集計。",
+        "",
+    ]
+    summary_path.write_text("\n".join(lines), encoding="utf-8")
 
 
 def _json_for_html(data: Any) -> str:
@@ -868,519 +1842,514 @@ def build_dashboard_html(parsed: dict) -> str:
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>ChatGPT Export Dashboard</title>
+  <title>ChatGPT / Codex 活動ダッシュボード</title>
   <style>
     :root {
-      --bg: #f4f6f9;
+      --bg: #f5f7fb;
       --card: #ffffff;
-      --line: #d7dde6;
-      --ink: #1f2937;
-      --muted: #5b6678;
-      --accent: #2f6feb;
-      --accent-soft: #e8f0ff;
-      --warn: #b7551f;
-      --radius: 12px;
+      --line: #d8e0ea;
+      --ink: #1d2733;
+      --muted: #5d6b7c;
+      --primary: #1b67d6;
+      --soft: #e9f1ff;
+      --warn-soft: #fff2e8;
+      --radius: 14px;
     }
     * { box-sizing: border-box; }
-    body {
-      margin: 0;
-      color: var(--ink);
-      font-family: "Segoe UI", "Yu Gothic UI", "Meiryo", sans-serif;
-      background:
-        radial-gradient(900px 300px at -10% 0%, #dce8ff 0%, transparent 55%),
-        radial-gradient(700px 240px at 120% -10%, #ffe6d7 0%, transparent 60%),
-        var(--bg);
-    }
-    .wrap {
-      max-width: 1500px;
-      margin: 0 auto;
-      padding: 18px;
-      display: grid;
-      gap: 14px;
-    }
-    .card {
-      background: var(--card);
-      border: 1px solid var(--line);
-      border-radius: var(--radius);
-      box-shadow: 0 4px 16px rgba(10, 20, 40, 0.06);
-      padding: 14px;
-    }
-    .header {
-      display: flex;
-      justify-content: space-between;
-      gap: 12px;
-      flex-wrap: wrap;
-      align-items: end;
-    }
-    h1 { margin: 0; font-size: 1.35rem; }
-    h2 { margin: 0 0 8px; font-size: 1.05rem; }
-    p { margin: 6px 0 0; color: var(--muted); }
-    .meta { color: var(--muted); font-size: 0.9rem; display: flex; gap: 14px; flex-wrap: wrap; }
-    .kpis {
-      display: grid;
-      grid-template-columns: repeat(5, minmax(150px, 1fr));
-      gap: 10px;
-    }
-    .kpi {
-      border: 1px solid var(--line);
-      border-radius: 10px;
-      padding: 10px;
-      background: linear-gradient(180deg, #ffffff, #f9fbff);
-    }
-    .kpi-label { color: var(--muted); font-size: 0.82rem; }
-    .kpi-value { margin-top: 6px; font-size: 1.24rem; font-weight: 700; }
-    .grid2 {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 12px;
-    }
-    .controls {
-      display: grid;
-      grid-template-columns: repeat(4, minmax(190px, 1fr));
-      gap: 10px;
-      align-items: end;
-    }
-    label { display: block; font-size: 0.83rem; color: var(--muted); margin-bottom: 4px; }
-    input, select {
-      width: 100%;
-      padding: 8px 10px;
-      border: 1px solid var(--line);
-      border-radius: 8px;
-      background: #fff;
-      color: var(--ink);
-      font-size: 0.92rem;
-    }
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      min-width: 760px;
-    }
-    th, td {
-      border-bottom: 1px solid var(--line);
-      padding: 7px 8px;
-      text-align: left;
-      font-size: 0.87rem;
-      vertical-align: top;
-    }
-    th {
-      position: sticky;
-      top: 0;
-      background: #f6f9ff;
-      color: var(--muted);
-      z-index: 1;
-    }
-    .table-wrap {
-      border: 1px solid var(--line);
-      border-radius: 10px;
-      max-height: 460px;
-      overflow: auto;
-    }
-    .small-table-wrap {
-      border: 1px solid var(--line);
-      border-radius: 10px;
-      max-height: 300px;
-      overflow: auto;
-    }
-    .mono { font-family: Consolas, "Courier New", monospace; }
-    .chip {
-      display: inline-block;
-      background: var(--accent-soft);
-      color: #204a9a;
-      border: 1px solid #c8dafd;
-      border-radius: 999px;
-      padding: 2px 8px;
-      font-size: 0.76rem;
-      white-space: nowrap;
-    }
-    .link-btn {
-      border: 0;
-      background: transparent;
-      color: var(--accent);
-      cursor: pointer;
-      padding: 0;
-      text-decoration: underline;
-      text-align: left;
-      font-size: 0.86rem;
-    }
+    body { margin: 0; background: var(--bg); color: var(--ink); font-family: "Segoe UI", "Yu Gothic UI", "Meiryo", sans-serif; line-height: 1.5; }
+    .wrap { max-width: 1280px; margin: 0 auto; padding: 20px 16px 32px; display: grid; gap: 16px; }
+    .panel { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; box-shadow: 0 4px 16px rgba(25,45,65,0.06); }
+    h1 { margin: 0; font-size: 1.45rem; }
+    h2 { margin: 0 0 8px; font-size: 1.08rem; }
+    h3 { margin: 0; font-size: 0.95rem; }
+    .sub { color: var(--muted); margin-top: 4px; font-size: 0.92rem; }
+    .meta { color: var(--muted); font-size: 0.85rem; display: flex; gap: 12px; flex-wrap: wrap; margin-top: 8px; }
+    .toolbar { display: flex; justify-content: space-between; gap: 12px; align-items: center; flex-wrap: wrap; }
+    .toggle { display: inline-flex; align-items: center; gap: 6px; font-size: 0.88rem; color: var(--muted); }
+    .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; }
+    .card { border: 1px solid var(--line); border-radius: 10px; padding: 10px; background: linear-gradient(180deg, #fff, #f9fcff); }
+    .card.emph { background: linear-gradient(180deg, #fff, var(--soft)); }
+    .label { font-size: 0.78rem; color: var(--muted); }
+    .value { margin-top: 4px; font-size: 1.2rem; font-weight: 700; }
+    .unit { font-size: 0.76rem; color: var(--muted); }
     .muted { color: var(--muted); }
-    .row-highlight td { background: #fff4e9; }
-    .bar-line {
-      height: 8px;
-      border-radius: 999px;
-      background: #ecf2ff;
-      overflow: hidden;
-    }
-    .bar-line > span {
-      display: block;
-      height: 100%;
-      background: linear-gradient(90deg, #4a83f0, #77a6ff);
-    }
-    .empty { color: var(--muted); font-size: 0.9rem; }
-    @media (max-width: 1200px) {
-      .kpis { grid-template-columns: repeat(2, minmax(150px, 1fr)); }
-      .controls { grid-template-columns: 1fr 1fr; }
-      .grid2 { grid-template-columns: 1fr; }
+    .note { margin-top: 8px; border-left: 4px solid #f2b07d; background: var(--warn-soft); padding: 8px 10px; border-radius: 8px; font-size: 0.86rem; color: #7c4a21; }
+    .list { display: grid; gap: 10px; }
+    .row { border: 1px solid var(--line); border-radius: 10px; padding: 10px; background: #fff; }
+    .row-grid { display: grid; grid-template-columns: 120px 1fr repeat(4, minmax(90px, 120px)); gap: 8px; align-items: start; }
+    .num { text-align: right; font-variant-numeric: tabular-nums; }
+    .title { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; line-height: 1.35; }
+    .chip { display: inline-block; border-radius: 999px; border: 1px solid #bdd1f5; background: var(--soft); color: #1d4fa6; padding: 2px 8px; font-size: 0.75rem; white-space: nowrap; }
+    details { margin-top: 8px; border-top: 1px dashed var(--line); padding-top: 8px; }
+    details > summary { cursor: pointer; color: var(--primary); font-size: 0.86rem; font-weight: 600; }
+    .detail-grid { margin-top: 8px; display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 6px 10px; font-size: 0.86rem; }
+    .raw { margin-top: 8px; background: #f8fafc; border: 1px dashed var(--line); border-radius: 8px; padding: 8px; font-size: 0.8rem; color: #425166; }
+    .filters { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; margin-top: 8px; margin-bottom: 6px; }
+    label { display: block; font-size: 0.8rem; color: var(--muted); margin-bottom: 4px; }
+    input, select { width: 100%; border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; background: #fff; font-size: 0.9rem; color: var(--ink); }
+    .kv { display: flex; justify-content: space-between; gap: 10px; font-size: 0.86rem; border-bottom: 1px dotted var(--line); padding: 3px 0; }
+    .kv:last-child { border-bottom: 0; }
+    .empty { color: var(--muted); font-size: 0.9rem; padding: 8px 0; }
+    .codex-list .row-grid { grid-template-columns: 110px 90px 80px 1fr; }
+    .snippet { word-break: break-word; color: #334155; }
+    @media (max-width: 960px) {
+      .row-grid { grid-template-columns: 1fr 1fr; }
+      .num { text-align: left; }
+      .codex-list .row-grid { grid-template-columns: 1fr; }
     }
   </style>
 </head>
 <body>
   <div class="wrap">
-    <section class="card header">
-      <div>
-        <h1>ChatGPT エクスポート分析ダッシュボード</h1>
-        <p>ローカルファイル専用表示。タイムゾーン: <span id="tz"></span></p>
+    <section class="panel">
+      <div class="toolbar">
+        <div>
+          <h1>ChatGPT / Codex 活動ダッシュボード</h1>
+          <div class="sub">ローカルファイル専用表示・タイムゾーン: <span id="tz"></span></div>
+        </div>
+        <label class="toggle"><input type="checkbox" id="detailToggle" /> 詳細データを表示</label>
       </div>
-      <div class="meta" id="topMeta"></div>
+      <div class="meta" id="metaInfo"></div>
     </section>
 
-    <section class="card">
+    <section class="panel">
       <h2>全体サマリー</h2>
-      <div class="kpis" id="kpis"></div>
+      <div class="cards" id="summaryCards"></div>
+      <div class="note">推定トークンはChatGPTエクスポート本文をローカルで概算した値です。OpenAIの課金トークンや公式利用量ではありません。</div>
     </section>
 
-    <section class="card grid2">
-      <div>
-        <h2>月別 user メッセージ</h2>
-        <div class="small-table-wrap">
-          <table>
-            <thead><tr><th>month</th><th>user_messages</th><th>conversations</th><th>active_days</th><th>user_tokens_est</th><th>assistant_tokens_est</th><th>total_tokens_est</th><th>avg_user_tokens_est</th><th>avg_tokens_per_active_day_est</th><th>avg_per_elapsed_day</th><th>avg_per_active_day</th><th>median_daily_user_messages</th><th>peak_daily_user_messages</th><th>peak_daily_date</th></tr></thead>
-            <tbody id="monthlyBody"></tbody>
-          </table>
-        </div>
-      </div>
-      <div>
-        <h2>日別 上位会話</h2>
-        <label for="daySelect">日付</label>
-        <select id="daySelect"></select>
-        <div class="small-table-wrap" style="margin-top:8px">
-          <table>
-            <thead><tr><th>#</th><th>title</th><th>user</th><th>category</th></tr></thead>
-            <tbody id="dailyTopBody"></tbody>
-          </table>
-        </div>
-      </div>
+    <section class="panel">
+      <h2>2026年4月のまとめ</h2>
+      <div class="cards" id="aprilCards"></div>
+      <div class="empty" id="aprilEmpty"></div>
     </section>
 
-    <section class="card">
-      <h2>会話一覧</h2>
-      <div class="controls">
+    <section class="panel">
+      <h2>月別サマリー</h2>
+      <div class="list" id="monthlyList"></div>
+    </section>
+
+    <section class="panel">
+      <h2>会話スレッド一覧</h2>
+      <div class="filters">
         <div>
           <label for="titleSearch">タイトル検索</label>
-          <input id="titleSearch" type="text" placeholder="部分一致で検索" />
+          <input id="titleSearch" type="text" placeholder="タイトル・キーワードで検索" />
         </div>
         <div>
           <label for="monthFilter">年月フィルタ</label>
           <select id="monthFilter"></select>
         </div>
         <div>
-          <label for="categoryFilter">カテゴリフィルタ</label>
+          <label for="categoryFilter">分類フィルタ</label>
           <select id="categoryFilter"></select>
         </div>
         <div>
-          <label for="sortBy">ソート</label>
+          <label for="sortBy">表示順</label>
           <select id="sortBy">
-            <option value="messages_desc">メッセージ数順</option>
-            <option value="last_desc">最終更新日順</option>
+            <option value="messages_desc">合計メッセージが多い順</option>
+            <option value="last_desc">終了が新しい順</option>
           </select>
         </div>
       </div>
-      <p class="muted" id="filterMeta"></p>
-      <div class="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>conversation_id</th>
-              <th>title</th>
-              <th>category</th>
-              <th>first_message_at</th>
-              <th>last_message_at</th>
-              <th>user</th>
-              <th>assistant</th>
-              <th>total</th>
-              <th>active_days</th>
-              <th>top_keywords</th>
-            </tr>
-          </thead>
-          <tbody id="conversationBody"></tbody>
-        </table>
-      </div>
+      <div class="muted" id="conversationCount"></div>
+      <div class="list" id="conversationList"></div>
+    </section>
+
+    <section class="panel">
+      <h2>日別: あなたの発言数（上位スレッド）</h2>
+      <label for="daySelect">日付</label>
+      <select id="daySelect"></select>
+      <div class="list" id="dailyTopList" style="margin-top:8px;"></div>
+    </section>
+
+    <section class="panel" id="codexPanel">
+      <h2>2026年4月 Codex突合</h2>
+      <ul class="muted">
+        <li>ChatGPT側の数は「ChatGPT内で生成されたCodex向け完成プロンプト数」。</li>
+        <li>Codex側の数は「Codexローカルログに残っているuser_message数」。</li>
+        <li>matchedは「正規化後に一致または高類似と判定されたもの」。</li>
+        <li>chat_onlyは「作ったが投げていない可能性、または編集して投げたため一致しなかった可能性」。</li>
+        <li>codex_onlyは「ChatGPTを経由せずCodexへ直接入力した可能性、またはChatGPT側抽出に失敗した可能性」。</li>
+        <li>これはOpenAIの課金トークンや公式利用回数ではなく、ローカルログ解析による実用集計。</li>
+      </ul>
+      <div class="cards" id="codexSummaryCards"></div>
+      <h3 style="margin-top:12px;">一致一覧</h3>
+      <div class="list codex-list" id="codexMatchedList"></div>
+      <h3 style="margin-top:12px;">ChatGPT側だけにあるもの</h3>
+      <div class="list codex-list" id="codexChatOnlyList"></div>
+      <h3 style="margin-top:12px;">Codex側だけにあるもの</h3>
+      <div class="list codex-list" id="codexOnlyList"></div>
     </section>
   </div>
 
   <script id="data" type="application/json">__PAYLOAD__</script>
   <script>
     const DATA = JSON.parse(document.getElementById("data").textContent);
-    const MONTHLY = (DATA.monthly || []).slice().sort((a,b)=>a.month.localeCompare(b.month));
-    const DAILY = (DATA.daily || []).slice().sort((a,b)=>a.date.localeCompare(b.date));
-    const DTC = DATA.daily_top_conversations || [];
+    const MONTHLY = (DATA.monthly || []).slice().sort((a, b) => a.month.localeCompare(b.month));
+    const DAILY = (DATA.daily || []).slice().sort((a, b) => a.date.localeCompare(b.date));
+    const DTC = (DATA.daily_top_conversations || []).slice();
     const INDEX = (DATA.conversation_index || []).slice();
-
-    const formatNumber = (v) => Number(v || 0).toLocaleString();
-    const formatOneDecimal = (v) => Number(v || 0).toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
-    const normalize = (v) => String(v || "").toLowerCase();
-    const monthOfIso = (iso) => {
-      if (!iso || typeof iso !== "string" || iso.length < 7) return "";
-      return iso.slice(0, 7);
-    };
+    const CODEX = DATA.codex_match || null;
 
     const state = {
       titleSearch: "",
       monthFilter: "all",
       categoryFilter: "all",
       sortBy: "messages_desc",
-      focusedConversationId: null,
-      selectedDay: DAILY.length ? DAILY[DAILY.length - 1].date : null,
+      selectedDay: DAILY.length ? DAILY[DAILY.length - 1].date : "",
+      developerMode: false,
     };
 
-    const dtcByDay = new Map();
-    for (const row of DTC) {
-      if (!dtcByDay.has(row.date)) dtcByDay.set(row.date, []);
-      dtcByDay.get(row.date).push(row);
+    const fmtInt = (v) => Number(v || 0).toLocaleString("ja-JP");
+    const fmtDec = (v) => Number(v || 0).toLocaleString("ja-JP", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+    const monthOfIso = (iso) => (iso && iso.length >= 7 ? iso.slice(0, 7) : "");
+    const monthToJp = (month) => {
+      if (!month || !/^\d{4}-\d{2}$/.test(month)) return month || "-";
+      return `${month.slice(0, 4)}?${month.slice(5, 7)}?`;
+    };
+    const escapeHtml = (value) =>
+      String(value ?? "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;");
+
+    function parseIso(iso) {
+      if (!iso) return null;
+      const d = new Date(iso);
+      return Number.isNaN(d.getTime()) ? null : d;
     }
-    for (const rows of dtcByDay.values()) {
-      rows.sort((a,b)=>a.rank-b.rank);
+
+    function fmtDateShort(dateText) {
+      if (!dateText) return "";
+      const d = parseIso(dateText);
+      if (!d) return dateText;
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, "0");
+      const day = String(d.getDate()).padStart(2, "0");
+      const h = String(d.getHours()).padStart(2, "0");
+      const min = String(d.getMinutes()).padStart(2, "0");
+      return `${y}/${m}/${day} ${h}:${min}`;
+    }
+
+    function fmtPeriod(firstIso, lastIso) {
+      const a = parseIso(firstIso);
+      const b = parseIso(lastIso);
+      if (!a && !b) return "-";
+      if (a && !b) return fmtDateShort(firstIso);
+      if (!a && b) return fmtDateShort(lastIso);
+      const start = fmtDateShort(firstIso);
+      const end = fmtDateShort(lastIso);
+      if (start.slice(0, 10) === end.slice(0, 10)) {
+        return `${start} → ${end.slice(11)}`;
+      }
+      return `${start} → ${end}`;
     }
 
     function renderHeader() {
-      document.getElementById("tz").textContent = DATA.meta?.timezone || "unknown";
+      const tz = DATA.meta?.timezone || "unknown";
+      document.getElementById("tz").textContent = tz;
       const stats = DATA.meta?.stats || {};
-      const topMeta = document.getElementById("topMeta");
-      topMeta.innerHTML = [
-        `入力会話オブジェクト: ${formatNumber(stats.total_conversation_objects || 0)}`,
-        `ユニーク会話: ${formatNumber(stats.total_conversations || 0)}`,
-        `ユニークメッセージ: ${formatNumber(stats.total_unique_messages || 0)}`,
-        `重複除外: ${formatNumber(stats.total_duplicate_messages_skipped || 0)}`,
-      ].map((x)=>`<span>${x}</span>`).join("");
+      document.getElementById("metaInfo").innerHTML = [
+        `入力会話オブジェクト: ${fmtInt(stats.total_conversation_objects || 0)}`,
+        `ユニークメッセージ: ${fmtInt(stats.total_unique_messages || 0)}`,
+        `重複スキップ: ${fmtInt(stats.total_duplicate_messages_skipped || 0)}`,
+      ].map((x) => `<span>${escapeHtml(x)}</span>`).join("");
     }
 
-    function renderKpis() {
+    function renderSummaryCards() {
       const stats = DATA.meta?.stats || {};
       const totalUser = MONTHLY.reduce((acc, row) => acc + Number(row.user_messages || 0), 0);
-      const totalActiveDays = MONTHLY.reduce((acc, row) => acc + Number(row.active_days || 0), 0);
+      const totalAssistant = MONTHLY.reduce((acc, row) => acc + Number(row.assistant_messages || 0), 0);
+      const totalTokens = MONTHLY.reduce((acc, row) => acc + Number(row.total_tokens_est || 0), 0);
+      const activeDays = MONTHLY.reduce((acc, row) => acc + Number(row.active_days || 0), 0);
+      const peakMonth = MONTHLY.length
+        ? MONTHLY.reduce((best, row) => (Number(row.user_messages || 0) > Number(best.user_messages || 0) ? row : best), MONTHLY[0])
+        : null;
       const peakDay = DAILY.length
         ? DAILY.reduce((best, row) => (Number(row.user_messages || 0) > Number(best.user_messages || 0) ? row : best), DAILY[0])
         : null;
       const cards = [
-        ["total_unique_messages", formatNumber(stats.total_unique_messages || 0)],
-        ["total_user_messages", formatNumber(totalUser)],
-        ["total_active_days", formatNumber(totalActiveDays)],
-        ["total_conversations", formatNumber(stats.total_conversations || INDEX.length)],
-        ["peak_day", peakDay ? `${peakDay.date} (${formatNumber(peakDay.user_messages)})` : "-"],
+        ["総メッセージ数", fmtInt(stats.total_unique_messages || 0), ""],
+        ["あなたの発言数", fmtInt(totalUser), ""],
+        ["AI返答数", fmtInt(totalAssistant), ""],
+        ["会話スレッド数", fmtInt(stats.total_conversations || INDEX.length), ""],
+        ["活動日数", fmtInt(activeDays), "日"],
+        ["推定総トークン", fmtInt(totalTokens), "tok"],
+        ["一番多かった月", peakMonth ? `${monthToJp(peakMonth.month)} (${fmtInt(peakMonth.user_messages)})` : "-", ""],
+        ["一番多かった日", peakDay ? `${peakDay.date.replaceAll("-", "/")} (${fmtInt(peakDay.user_messages)})` : "-", ""],
       ];
-      const root = document.getElementById("kpis");
-      root.innerHTML = "";
-      for (const [label, value] of cards) {
-        const el = document.createElement("div");
-        el.className = "kpi";
-        el.innerHTML = `<div class="kpi-label">${label}</div><div class="kpi-value">${value}</div>`;
-        root.appendChild(el);
-      }
+      document.getElementById("summaryCards").innerHTML = cards
+        .map(([label, value, unit]) => `<div class="card"><div class="label">${escapeHtml(label)}</div><div class="value">${escapeHtml(value)}</div>${unit ? `<div class="unit">${escapeHtml(unit)}</div>` : ""}</div>`)
+        .join("");
     }
 
-    function renderMonthlyTable() {
-      const body = document.getElementById("monthlyBody");
-      body.innerHTML = "";
+    function renderAprilCards() {
+      const april = MONTHLY.find((row) => row.month === "2026-04");
+      const cardsRoot = document.getElementById("aprilCards");
+      const empty = document.getElementById("aprilEmpty");
+      if (!april) {
+        cardsRoot.innerHTML = "";
+        empty.textContent = "2026年4月のデータはありません。";
+        return;
+      }
+      empty.textContent = "";
+      const cards = [
+        ["会話スレッド数", fmtInt(april.conversations), ""],
+        ["あなたの発言数", fmtInt(april.user_messages), ""],
+        ["AI返答数", fmtInt(april.assistant_messages), ""],
+        ["推定総トークン", fmtInt(april.total_tokens_est), "tok"],
+        ["あなたの入力トークン", fmtInt(april.user_tokens_est), "tok"],
+        ["AI返答トークン", fmtInt(april.assistant_tokens_est), "tok"],
+        ["活動日数", fmtInt(april.active_days), "日"],
+        ["1日平均発言数", fmtDec(april.avg_per_elapsed_day), ""],
+        ["中央値", fmtDec(april.median_daily_user_messages), ""],
+        ["最大日の発言数", fmtInt(april.peak_daily_user_messages), ""],
+        ["最大日の日付", (april.peak_daily_date || "").replaceAll("-", "/"), ""],
+      ];
+      cardsRoot.innerHTML = cards
+        .map(([label, value, unit]) => `<div class="card emph"><div class="label">${escapeHtml(label)}</div><div class="value">${escapeHtml(value)}</div>${unit ? `<div class="unit">${escapeHtml(unit)}</div>` : ""}</div>`)
+        .join("");
+    }
+
+    function renderMonthlyList() {
+      const root = document.getElementById("monthlyList");
       if (!MONTHLY.length) {
-        body.innerHTML = `<tr><td colspan="14" class="empty">データがありません</td></tr>`;
+        root.innerHTML = `<div class="empty">月別データがありません。</div>`;
         return;
       }
-      const maxUser = Math.max(...MONTHLY.map(r=>Number(r.user_messages || 0)), 1);
-      for (const row of MONTHLY) {
-        const tr = document.createElement("tr");
-        const pct = Math.round((Number(row.user_messages || 0) / maxUser) * 100);
-        tr.innerHTML = `
-          <td class="mono">${row.month}</td>
-          <td>
-            <div>${formatNumber(row.user_messages)}</div>
-            <div class="bar-line"><span style="width:${pct}%"></span></div>
-          </td>
-          <td>${formatNumber(row.conversations)}</td>
-          <td>${formatNumber(row.active_days)}</td>
-          <td>${formatNumber(row.user_tokens_est)}</td>
-          <td>${formatNumber(row.assistant_tokens_est)}</td>
-          <td>${formatNumber(row.total_tokens_est)}</td>
-          <td>${formatOneDecimal(row.avg_user_tokens_est)}</td>
-          <td>${formatOneDecimal(row.avg_tokens_per_active_day_est)}</td>
-          <td>${formatOneDecimal(row.avg_per_elapsed_day)}</td>
-          <td>${formatOneDecimal(row.avg_per_active_day)}</td>
-          <td>${formatOneDecimal(row.median_daily_user_messages)}</td>
-          <td>${formatNumber(row.peak_daily_user_messages)}</td>
-          <td class="mono">${row.peak_daily_date || ""}</td>
-        `;
-        body.appendChild(tr);
-      }
-    }
-
-    function setupDaySelect() {
-      const select = document.getElementById("daySelect");
-      const days = DAILY.map(r => r.date);
-      select.innerHTML = "";
-      if (!days.length) {
-        const option = document.createElement("option");
-        option.value = "";
-        option.textContent = "データなし";
-        select.appendChild(option);
-        state.selectedDay = null;
-        return;
-      }
-      for (const day of days) {
-        const option = document.createElement("option");
-        option.value = day;
-        option.textContent = day;
-        if (state.selectedDay === day) option.selected = true;
-        select.appendChild(option);
-      }
-      if (!state.selectedDay || !days.includes(state.selectedDay)) {
-        state.selectedDay = days[days.length - 1];
-        select.value = state.selectedDay;
-      }
-      select.onchange = () => {
-        state.selectedDay = select.value;
-        renderDailyTop();
-      };
-    }
-
-    function renderDailyTop() {
-      const body = document.getElementById("dailyTopBody");
-      body.innerHTML = "";
-      if (!state.selectedDay) {
-        body.innerHTML = `<tr><td colspan="4" class="empty">日付を選択してください</td></tr>`;
-        return;
-      }
-      const rows = dtcByDay.get(state.selectedDay) || [];
-      if (!rows.length) {
-        body.innerHTML = `<tr><td colspan="4" class="empty">この日の会話データはありません</td></tr>`;
-        return;
-      }
-      for (const row of rows) {
-        const tr = document.createElement("tr");
-        const button = document.createElement("button");
-        button.type = "button";
-        button.className = "link-btn";
-        button.textContent = row.title || row.conversation_id;
-        button.addEventListener("click", () => {
-          state.focusedConversationId = row.conversation_id;
-          const month = monthOfIso((INDEX.find(x=>x.conversation_id===row.conversation_id) || {}).last_message_at || "");
-          if (month) {
-            const monthSelect = document.getElementById("monthFilter");
-            state.monthFilter = month;
-            monthSelect.value = month;
-          }
-          renderConversationTable();
-          const targetRow = document.querySelector(`tr[data-conv-id="${CSS.escape(row.conversation_id)}"]`);
-          if (targetRow) {
-            targetRow.scrollIntoView({ behavior: "smooth", block: "center" });
-          }
-        });
-
-        const titleTd = document.createElement("td");
-        titleTd.appendChild(button);
-
-        tr.innerHTML = `<td>${row.rank}</td><td></td><td>${formatNumber(row.user_messages)}</td><td>${row.inferred_category || ""}</td>`;
-        tr.children[1].replaceWith(titleTd);
-        body.appendChild(tr);
-      }
+      const ordered = MONTHLY.slice().sort((a, b) => b.month.localeCompare(a.month));
+      root.innerHTML = ordered.map((row) => `
+        <article class="row">
+          <div class="row-grid">
+            <div><span class="chip">${escapeHtml(monthToJp(row.month))}</span></div>
+            <div></div>
+            <div class="num"><div class="label">会話スレッド数</div><div>${fmtInt(row.conversations)}</div></div>
+            <div class="num"><div class="label">あなたの発言数</div><div>${fmtInt(row.user_messages)}</div></div>
+            <div class="num"><div class="label">推定総トークン</div><div>${fmtInt(row.total_tokens_est)} tok</div></div>
+            <div class="num"><div class="label">活動日数</div><div>${fmtInt(row.active_days)} 日</div></div>
+            <div class="num"><div class="label">最大日の発言数</div><div>${fmtInt(row.peak_daily_user_messages)}</div></div>
+          </div>
+          <details>
+            <summary>詳細</summary>
+            <div class="detail-grid">
+              <div class="kv"><span>あなたの入力トークン</span><strong>${fmtInt(row.user_tokens_est)} tok</strong></div>
+              <div class="kv"><span>AI返答トークン</span><strong>${fmtInt(row.assistant_tokens_est)} tok</strong></div>
+              <div class="kv"><span>systemトークン</span><strong>${fmtInt(row.system_tokens_est || 0)} tok</strong></div>
+              <div class="kv"><span>toolトークン</span><strong>${fmtInt(row.tool_tokens_est || 0)} tok</strong></div>
+              <div class="kv"><span>1発言あたり入力トークン</span><strong>${fmtDec(row.avg_user_tokens_est)}</strong></div>
+              <div class="kv"><span>1日あたり推定トークン</span><strong>${fmtDec(row.avg_tokens_per_active_day_est)}</strong></div>
+              <div class="kv"><span>1日の中央値</span><strong>${fmtDec(row.median_daily_user_messages)}</strong></div>
+              <div class="kv"><span>最大日の日付</span><strong>${escapeHtml((row.peak_daily_date || "").replaceAll("-", "/"))}</strong></div>
+              <div class="kv"><span>最大日の発言数</span><strong>${fmtInt(row.peak_daily_user_messages)}</strong></div>
+            </div>
+            ${state.developerMode ? `<div class="raw">month: ${escapeHtml(row.month)} / user_tokens_est: ${fmtInt(row.user_tokens_est)} / assistant_tokens_est: ${fmtInt(row.assistant_tokens_est)}</div>` : ""}
+          </details>
+        </article>
+      `).join("");
     }
 
     function setupFilters() {
-      const titleSearch = document.getElementById("titleSearch");
+      const months = Array.from(new Set(INDEX.map((row) => monthOfIso(row.last_message_at)).filter(Boolean))).sort();
+      const categories = Array.from(new Set(INDEX.map((row) => row.inferred_category || "その他"))).sort();
       const monthFilter = document.getElementById("monthFilter");
       const categoryFilter = document.getElementById("categoryFilter");
-      const sortBy = document.getElementById("sortBy");
-
-      const months = Array.from(new Set(INDEX.map(row => monthOfIso(row.last_message_at)).filter(Boolean))).sort();
-      const categories = Array.from(new Set(INDEX.map(row => row.inferred_category || "その他"))).sort();
-
-      monthFilter.innerHTML = `<option value="all">すべて</option>` + months.map(m => `<option value="${m}">${m}</option>`).join("");
-      categoryFilter.innerHTML = `<option value="all">すべて</option>` + categories.map(c => `<option value="${c}">${c}</option>`).join("");
-
-      titleSearch.oninput = () => {
-        state.titleSearch = titleSearch.value;
-        renderConversationTable();
-      };
-      monthFilter.onchange = () => {
-        state.monthFilter = monthFilter.value;
-        renderConversationTable();
-      };
-      categoryFilter.onchange = () => {
-        state.categoryFilter = categoryFilter.value;
-        renderConversationTable();
-      };
-      sortBy.onchange = () => {
-        state.sortBy = sortBy.value;
-        renderConversationTable();
-      };
+      monthFilter.innerHTML = `<option value="all">すべて</option>` + months.map((m) => `<option value="${m}">${monthToJp(m)}</option>`).join("");
+      categoryFilter.innerHTML = `<option value="all">すべて</option>` + categories.map((c) => `<option value="${c}">${escapeHtml(c)}</option>`).join("");
+      monthFilter.value = state.monthFilter;
+      categoryFilter.value = state.categoryFilter;
     }
 
-    function filterAndSortIndex() {
+    function filterConversationRows() {
       let rows = INDEX.slice();
-      const q = normalize(state.titleSearch);
+      const q = state.titleSearch.trim().toLowerCase();
       if (q) {
-        rows = rows.filter(row => normalize(row.title).includes(q));
+        rows = rows.filter((row) => {
+          const title = String(row.title || "").toLowerCase();
+          const keywords = (Array.isArray(row.top_keywords) ? row.top_keywords : []).join(" ").toLowerCase();
+          return title.includes(q) || keywords.includes(q);
+        });
       }
       if (state.monthFilter !== "all") {
-        rows = rows.filter(row => monthOfIso(row.last_message_at) === state.monthFilter);
+        rows = rows.filter((row) => monthOfIso(row.last_message_at) === state.monthFilter);
       }
       if (state.categoryFilter !== "all") {
-        rows = rows.filter(row => (row.inferred_category || "その他") === state.categoryFilter);
+        rows = rows.filter((row) => (row.inferred_category || "その他") === state.categoryFilter);
       }
-
-      rows.sort((a,b) => {
+      rows.sort((a, b) => {
         if (state.sortBy === "last_desc") {
-          const av = a.last_message_at || "";
-          const bv = b.last_message_at || "";
-          if (av !== bv) return bv.localeCompare(av);
-          return Number(b.total_message_count || 0) - Number(a.total_message_count || 0);
+          return String(b.last_message_at || "").localeCompare(String(a.last_message_at || ""));
         }
-        const byTotal = Number(b.total_message_count || 0) - Number(a.total_message_count || 0);
-        if (byTotal !== 0) return byTotal;
-        return (b.last_message_at || "").localeCompare(a.last_message_at || "");
+        const totalDiff = Number(b.total_message_count || 0) - Number(a.total_message_count || 0);
+        if (totalDiff !== 0) return totalDiff;
+        return String(b.last_message_at || "").localeCompare(String(a.last_message_at || ""));
       });
       return rows;
     }
 
-    function renderConversationTable() {
-      const rows = filterAndSortIndex();
-      const body = document.getElementById("conversationBody");
-      body.innerHTML = "";
-
-      for (const row of rows) {
-        const tr = document.createElement("tr");
-        tr.dataset.convId = row.conversation_id;
-        if (state.focusedConversationId && row.conversation_id === state.focusedConversationId) {
-          tr.classList.add("row-highlight");
-        }
-        const keywords = Array.isArray(row.top_keywords) ? row.top_keywords : [];
-        tr.innerHTML = `
-          <td class="mono">${row.conversation_id}</td>
-          <td>${row.title || ""}</td>
-          <td><span class="chip">${row.inferred_category || "その他"}</span></td>
-          <td class="mono">${row.first_message_at || ""}</td>
-          <td class="mono">${row.last_message_at || ""}</td>
-          <td>${formatNumber(row.user_message_count)}</td>
-          <td>${formatNumber(row.assistant_message_count)}</td>
-          <td>${formatNumber(row.total_message_count)}</td>
-          <td>${formatNumber(row.active_days)}</td>
-          <td>${keywords.join(", ")}</td>
-        `;
-        body.appendChild(tr);
-      }
-
+    function renderConversationList() {
+      const rows = filterConversationRows();
+      const root = document.getElementById("conversationList");
+      document.getElementById("conversationCount").textContent = `表示件数: ${fmtInt(rows.length)} / 全${fmtInt(INDEX.length)}件`;
       if (!rows.length) {
-        body.innerHTML = `<tr><td colspan="10" class="empty">条件に一致する会話がありません</td></tr>`;
+        root.innerHTML = `<div class="empty">条件に一致する会話スレッドがありません。</div>`;
+        return;
+      }
+      root.innerHTML = rows.map((row) => {
+        const keywords = Array.isArray(row.top_keywords) ? row.top_keywords : [];
+        return `
+          <article class="row">
+            <div class="row-grid">
+              <div>
+                <div class="label">タイトル</div>
+                <div class="title" title="${escapeHtml(row.title || "")}">${escapeHtml(row.title || "(untitled)")}</div>
+              </div>
+              <div>
+                <div class="label">分類</div>
+                <div><span class="chip">${escapeHtml(row.inferred_category || "その他")}</span></div>
+              </div>
+              <div class="num"><div class="label">あなたの発言</div><div>${fmtInt(row.user_message_count)}</div></div>
+              <div class="num"><div class="label">AI返答</div><div>${fmtInt(row.assistant_message_count)}</div></div>
+              <div class="num"><div class="label">合計</div><div>${fmtInt(row.total_message_count)}</div></div>
+              <div>
+                <div class="label">期間</div>
+                <div>${escapeHtml(fmtPeriod(row.first_message_at, row.last_message_at))}</div>
+              </div>
+            </div>
+            <div style="margin-top:6px;"><span class="label">キーワード:</span> <span class="snippet">${escapeHtml(keywords.join(", "))}</span></div>
+            ${state.developerMode ? `<div class="raw">conversation_id: ${escapeHtml(row.conversation_id || "")}<br/>raw start: ${escapeHtml(row.first_message_at || "")}<br/>raw end: ${escapeHtml(row.last_message_at || "")}<br/>raw category: ${escapeHtml(row.inferred_category || "")}<br/>raw top_keywords: ${escapeHtml(keywords.join("|"))}</div>` : ""}
+          </article>
+        `;
+      }).join("");
+    }
+
+    function setupDailySelect() {
+      const select = document.getElementById("daySelect");
+      if (!DAILY.length) {
+        select.innerHTML = `<option value="">データなし</option>`;
+        state.selectedDay = "";
+        return;
+      }
+      select.innerHTML = DAILY.map((row) => `<option value="${row.date}">${row.date.replaceAll("-", "/")}</option>`).join("");
+      if (!state.selectedDay) state.selectedDay = DAILY[DAILY.length - 1].date;
+      select.value = state.selectedDay;
+    }
+
+    function renderDailyTop() {
+      const root = document.getElementById("dailyTopList");
+      if (!state.selectedDay) {
+        root.innerHTML = `<div class="empty">日付を選択してください。</div>`;
+        return;
+      }
+      const rows = DTC.filter((row) => row.date === state.selectedDay).sort((a, b) => Number(a.rank || 0) - Number(b.rank || 0));
+      if (!rows.length) {
+        root.innerHTML = `<div class="empty">この日の上位スレッドはありません。</div>`;
+        return;
+      }
+      root.innerHTML = rows.map((row) => `
+        <article class="row">
+          <div class="row-grid" style="grid-template-columns: 60px 1fr 120px 120px;">
+            <div><span class="chip">#${fmtInt(row.rank)}</span></div>
+            <div class="title" title="${escapeHtml(row.title || "")}">${escapeHtml(row.title || "(untitled)")}</div>
+            <div class="num"><div class="label">あなたの発言</div><div>${fmtInt(row.user_messages)}</div></div>
+            <div><span class="chip">${escapeHtml(row.inferred_category || "その他")}</span></div>
+          </div>
+        </article>
+      `).join("");
+    }
+
+    function renderCodexMatch() {
+      const panel = document.getElementById("codexPanel");
+      if (!CODEX || !CODEX.summary) {
+        panel.style.display = "none";
+        return;
+      }
+      panel.style.display = "block";
+      const summary = CODEX.summary;
+      const april = MONTHLY.find((row) => row.month === "2026-04");
+      const chatgptThreadCount = april ? Number(april.conversations || 0) : null;
+      const codexSessionCount = Number(CODEX.meta?.rollout_file_count || 0);
+      const cards = [
+        ["ChatGPTスレッド数", chatgptThreadCount == null ? "-" : fmtInt(chatgptThreadCount)],
+        ["Codexセッション数", fmtInt(codexSessionCount)],
+        ["合算スレッド数", chatgptThreadCount == null ? "-" : fmtInt(chatgptThreadCount + codexSessionCount)],
+        ["ChatGPTでのあなたの入力数", fmtInt(summary.chat_codex_prompt_count || 0)],
+        ["Codexでのあなたの入力数", fmtInt(summary.codex_user_prompt_count || 0)],
+        ["ChatGPT作成→Codex投入の一致数", fmtInt(summary.matched_prompt_count || 0)],
+        ["ChatGPT側だけにあるもの", fmtInt(summary.chat_only_prompt_count || 0)],
+        ["Codex側だけにあるもの", fmtInt(summary.codex_only_prompt_count || 0)],
+      ];
+      document.getElementById("codexSummaryCards").innerHTML = cards
+        .map(([label, value]) => `<div class="card"><div class="label">${escapeHtml(label)}</div><div class="value">${escapeHtml(value)}</div></div>`)
+        .join("");
+
+      function renderCodexRows(targetId, rows, typeName) {
+        const root = document.getElementById(targetId);
+        if (!rows || !rows.length) {
+          root.innerHTML = `<div class="empty">データがありません。</div>`;
+          return;
+        }
+        root.innerHTML = rows.slice(0, 200).map((row) => `
+          <article class="row">
+            <div class="row-grid">
+              <div>${escapeHtml((row.date_jst || "").replaceAll("-", "/"))}</div>
+              <div><span class="chip">${escapeHtml(row.match_type || typeName)}</span></div>
+              <div class="num">${escapeHtml(String(row.confidence ?? ""))}</div>
+              <div>
+                <div>${escapeHtml(row.conversation_title || "")}</div>
+                <div class="muted">${escapeHtml((row.rollout_path || "").slice(-96))}</div>
+                <div class="snippet">${escapeHtml(row.snippet || "")}</div>
+              </div>
+            </div>
+          </article>
+        `).join("");
       }
 
-      document.getElementById("filterMeta").textContent = `表示件数: ${formatNumber(rows.length)} / 全${formatNumber(INDEX.length)}件`;
+      renderCodexRows("codexMatchedList", CODEX.matches || [], "matched");
+      renderCodexRows("codexChatOnlyList", CODEX.unmatched_chat || [], "chat_only");
+      renderCodexRows("codexOnlyList", CODEX.unmatched_codex || [], "codex_only");
+    }
+
+    function bindEvents() {
+      document.getElementById("detailToggle").addEventListener("change", (e) => {
+        state.developerMode = e.target.checked;
+        renderMonthlyList();
+        renderConversationList();
+      });
+      document.getElementById("titleSearch").addEventListener("input", (e) => {
+        state.titleSearch = e.target.value || "";
+        renderConversationList();
+      });
+      document.getElementById("monthFilter").addEventListener("change", (e) => {
+        state.monthFilter = e.target.value;
+        renderConversationList();
+      });
+      document.getElementById("categoryFilter").addEventListener("change", (e) => {
+        state.categoryFilter = e.target.value;
+        renderConversationList();
+      });
+      document.getElementById("sortBy").addEventListener("change", (e) => {
+        state.sortBy = e.target.value;
+        renderConversationList();
+      });
+      document.getElementById("daySelect").addEventListener("change", (e) => {
+        state.selectedDay = e.target.value;
+        renderDailyTop();
+      });
     }
 
     function render() {
       renderHeader();
-      renderKpis();
-      renderMonthlyTable();
-      setupDaySelect();
-      renderDailyTop();
+      renderSummaryCards();
+      renderAprilCards();
+      renderMonthlyList();
       setupFilters();
-      renderConversationTable();
+      setupDailySelect();
+      renderConversationList();
+      renderDailyTop();
+      renderCodexMatch();
+      bindEvents();
     }
 
     render();
@@ -1541,6 +2510,7 @@ def write_outputs(output_dir: Path, parsed: dict) -> None:
     )
     write_monthly_summary_md(output_dir / "monthly_summary.md", parsed)
     write_dashboard_html(output_dir / "dashboard.html", parsed)
+    write_codex_match_outputs(output_dir, parsed.get("codex_match"))
 
 
 def main() -> None:
@@ -1562,6 +2532,16 @@ def main() -> None:
         action="store_true",
         help="Force reparsing raw export even if parsed_summary.json is reusable",
     )
+    parser.add_argument(
+        "--codex-sessions-root",
+        default=str(DEFAULT_CODEX_SESSIONS_ROOT),
+        help="Codex sessions root directory (default: ~/.codex/sessions)",
+    )
+    parser.add_argument(
+        "--codex-match-month",
+        default=DEFAULT_MATCH_MONTH,
+        help="Target month for Codex match report (YYYY-MM)",
+    )
     args = parser.parse_args()
 
     input_dir = Path(args.input_dir).resolve()
@@ -1577,17 +2557,16 @@ def main() -> None:
 
     input_files, marker = detect_inputs(input_dir)
     parsed_path = output_dir / "parsed_summary.json"
+    local_tz = ensure_timezone(args.timezone)
 
     if not args.rebuild and should_reuse_parsed(parsed_path, input_files, rules_path):
         try:
             parsed = load_parsed(parsed_path)
             parse_mode = "reused parsed_summary.json"
         except ValueError:
-            local_tz = ensure_timezone(args.timezone)
             parsed = collect_stats_from_inputs(input_files, marker, local_tz, rules)
             parse_mode = "parsed raw export (incompatible parsed_summary.json was rebuilt)"
     else:
-        local_tz = ensure_timezone(args.timezone)
         parsed = collect_stats_from_inputs(input_files, marker, local_tz, rules)
         parse_mode = "parsed raw export"
 
@@ -1596,6 +2575,17 @@ def main() -> None:
     parsed["meta"]["input_files"] = [str(p) for p in input_files]
     parsed["meta"]["rules_file"] = str(rules_path)
     parsed["meta"]["generated_at"] = datetime.now().astimezone().isoformat()
+    parsed["meta"]["codex_match_month"] = args.codex_match_month
+    codex_sessions_root = Path(args.codex_sessions_root).resolve()
+    parsed["meta"]["codex_sessions_root"] = str(codex_sessions_root)
+
+    parsed["codex_match"] = build_codex_match_report(
+        input_files,
+        marker,
+        local_tz,
+        codex_sessions_root,
+        args.codex_match_month,
+    )
 
     write_outputs(output_dir, parsed)
 
@@ -1618,9 +2608,16 @@ def main() -> None:
         "keywords_monthly.csv",
         "parsed_summary.json",
         "monthly_summary.md",
+        "out/codex_chat_match_2026-04_summary.md",
+        "out/codex_chat_match_2026-04_chat_prompts.csv",
+        "out/codex_chat_match_2026-04_codex_prompts.csv",
+        "out/codex_chat_match_2026-04_matches.csv",
+        "out/codex_chat_match_2026-04_unmatched_chat.csv",
+        "out/codex_chat_match_2026-04_unmatched_codex.csv",
     ):
         print(f"  - {output_dir / name}")
 
 
 if __name__ == "__main__":
     main()
+
