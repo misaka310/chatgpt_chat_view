@@ -100,3 +100,6 @@ python -m unittest tests.test_analyze_chat_export
 
 ## Dashboard guide
 - See `docs/dashboard_guide.md` for UI reading order and term definitions.
+
+
+<!-- chatgpt-index-refresh: 2026-05-05 -->
