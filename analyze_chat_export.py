@@ -2928,6 +2928,13 @@ def build_dashboard_html() -> str:
 """
 
 
+DASHBOARD_TEMPLATE_PATH = Path(__file__).with_name("dashboard.template.html")
+
+
+def build_dashboard_html() -> str:
+    return DASHBOARD_TEMPLATE_PATH.read_text(encoding="utf-8")
+
+
 def write_dashboard_html(path: Path) -> None:
     path.write_text(build_dashboard_html(), encoding="utf-8")
 

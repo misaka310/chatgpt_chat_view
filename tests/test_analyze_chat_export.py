@@ -162,9 +162,20 @@ class AnalyzeChatExportTest(unittest.TestCase):
 
             dashboard_html = (output_dir / "dashboard.html").read_text(encoding="utf-8")
             self.assertIn("dashboard_summary.json", dashboard_html)
-            self.assertIn("会話一覧を読み込む", dashboard_html)
-            self.assertIn("Codex照合を読み込む", dashboard_html)
-            self.assertIn("月内の日別一覧", dashboard_html)
+            self.assertIn("ChatGPT 利用ダッシュボード", dashboard_html)
+            self.assertIn("送信回数の推移を中心に確認", dashboard_html)
+            self.assertIn("月ごとの送信回数", dashboard_html)
+            self.assertIn("選択月の日別送信回数", dashboard_html)
+            self.assertIn("送信回数", dashboard_html)
+            self.assertNotIn("会話スレッド数", dashboard_html)
+            self.assertNotIn("会話数", dashboard_html)
+            self.assertNotIn("総メッセージ数", dashboard_html)
+            self.assertNotIn("AI返答数", dashboard_html)
+            self.assertNotIn("総トークン", dashboard_html)
+            self.assertNotIn("推定総トークン", dashboard_html)
+            self.assertNotIn("Codex照合", dashboard_html)
+            self.assertNotIn("カテゴリ・キーワード詳細", dashboard_html)
+            self.assertNotIn("会話一覧", dashboard_html)
             self.assertNotIn('<script id="data" type="application/json">', dashboard_html)
 
     def test_codex_match_filters_agents_injection(self) -> None:

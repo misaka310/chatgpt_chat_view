@@ -20,7 +20,7 @@
 python .\analyze_chat_export.py --input-dir . --output-dir . --timezone Asia/Tokyo --rebuild
 ```
 
-3. `dashboard.html` は `fetch()` で JSON を読むため、ローカルHTTPサーバー経由で開きます。
+3. `analyze_chat_export.py` が `dashboard.template.html` から `dashboard.html` を生成するので、恒久的なUI変更はこの生成元を直します。`dashboard.html` は `fetch()` で JSON を読むため、ローカルHTTPサーバー経由で開きます。
 
 ```powershell
 python -m http.server 8733
@@ -63,7 +63,7 @@ http://localhost:8733/dashboard.html
 
 - まず見るのは `dashboard.html` です。
 - 全体サマリーだけ見たいときは `dashboard_summary.json` が元データです。
-- `dashboard.html` は、月ごとの送信回数の推移、選択月サマリー、月別一覧、選択月の日別送信回数を中心に表示します。
+- `dashboard.html` は、月ごとの送信回数の推移、選択月サマリー、月別一覧、選択月の日別送信回数を中心に表示します。表示内容は `analyze_chat_export.py` と `dashboard.template.html` から再生成されます。
 - 月別一覧で月を選ぶと、その月のサマリーと日別推移が連動します。
 - 日別の元データは `dashboard_daily.json` で、日別推移の棒グラフは `daily.user_messages` を使います。
 - `dashboard_conversations.json`、`dashboard_categories.json`、`dashboard_codex_match.json` は補助データで、主画面の中心には置いていません。
