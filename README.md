@@ -1,6 +1,6 @@
 # ChatGPT エクスポート解析ツール
 
-このリポジトリは、ChatGPT エクスポートと Codex ローカルログを解析して、ローカルで確認できる集計ファイルを作るためのものです。
+このリポジトリは、ChatGPT エクスポートを解析して、月ごとの送信回数と選択月の日別送信回数をローカルで確認できる集計ファイルを作るためのものです。
 
 ## 安全ポリシー
 
@@ -63,10 +63,10 @@ http://localhost:8733/dashboard.html
 
 - まず見るのは `dashboard.html` です。
 - 全体サマリーだけ見たいときは `dashboard_summary.json` が元データです。
-- 月別サマリーの「詳細」を開くと、その月の1日ごとの会話数一覧が見えます。
-- 日別一覧を見るだけなら日付選択は不要です。
-- 会話一覧を見たいときは `dashboard_conversations.json` を `dashboard.html` から読み込みます。
-- 日別の掘り下げは `dashboard_daily.json`、カテゴリとキーワードは `dashboard_categories.json`、Codex 照合は `dashboard_codex_match.json` です。
+- `dashboard.html` は、月ごとの送信回数の推移、選択月サマリー、月別一覧、選択月の日別送信回数を中心に表示します。
+- 月別一覧で月を選ぶと、その月のサマリーと日別推移が連動します。
+- 日別の元データは `dashboard_daily.json` で、日別推移の棒グラフは `daily.user_messages` を使います。
+- `dashboard_conversations.json`、`dashboard_categories.json`、`dashboard_codex_match.json` は補助データで、主画面の中心には置いていません。
 - `parsed_summary.json` と CSV 群は互換用の集計結果なので、通常は直接見る必要はありません。
 
 ## 補足
