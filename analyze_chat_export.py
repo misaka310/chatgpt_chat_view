@@ -1831,13 +1831,88 @@ def write_codex_match_outputs(output_dir: Path, codex_match: Optional[dict]) -> 
     summary_path.write_text("\n".join(lines), encoding="utf-8")
 
 
-def _json_for_html(data: Any) -> str:
-    return json.dumps(data, ensure_ascii=False, separators=(",", ":")).replace("</", "<\\/")
+def _json_for_file(data: Any) -> str:
+    return json.dumps(data, ensure_ascii=False, indent=2)
 
 
-def build_dashboard_html(parsed: dict) -> str:
-    payload = _json_for_html(parsed)
-    template = """<!doctype html>
+def _write_json(path: Path, data: Any) -> None:
+    path.write_text(_json_for_file(data), encoding="utf-8")
+
+
+def build_dashboard_summary_payload(parsed: dict) -> dict:
+    meta = parsed.get("meta", {})
+    return {
+        "meta": {
+            "generated_at": meta.get("generated_at", ""),
+            "timezone": meta.get("timezone", ""),
+            "stats": meta.get("stats", {}),
+        },
+        "monthly": sorted(parsed.get("monthly", []), key=lambda r: r["month"]),
+    }
+
+
+def build_dashboard_conversations_payload(parsed: dict) -> dict:
+    rows = sorted(
+        parsed.get("conversation_index", []),
+        key=lambda row: (
+            row.get("last_message_at") or "",
+            row.get("total_message_count", 0),
+            row.get("conversation_id", ""),
+        ),
+        reverse=True,
+    )
+    meta = parsed.get("meta", {})
+    return {
+        "meta": {
+            "generated_at": meta.get("generated_at", ""),
+            "timezone": meta.get("timezone", ""),
+        },
+        "total": len(rows),
+        "items": rows,
+    }
+
+
+def build_dashboard_daily_payload(parsed: dict) -> dict:
+    meta = parsed.get("meta", {})
+    return {
+        "meta": {
+            "generated_at": meta.get("generated_at", ""),
+            "timezone": meta.get("timezone", ""),
+        },
+        "daily": sorted(parsed.get("daily", []), key=lambda r: r["date"]),
+        "daily_hourly": sorted(parsed.get("daily_hourly", []), key=lambda r: (r["date"], r["hour"])),
+        "monthly_weekday_hour": sorted(
+            parsed.get("monthly_weekday_hour", []), key=lambda r: (r["month"], r["weekday"], r["hour"])
+        ),
+        "daily_top_conversations": sorted(
+            parsed.get("daily_top_conversations", []), key=lambda r: (r["date"], r["rank"])
+        ),
+    }
+
+
+def build_dashboard_categories_payload(parsed: dict) -> dict:
+    meta = parsed.get("meta", {})
+    return {
+        "meta": {
+            "generated_at": meta.get("generated_at", ""),
+            "timezone": meta.get("timezone", ""),
+        },
+        "category_monthly": sorted(parsed.get("category_monthly", []), key=lambda r: (r["month"], r["category"])),
+        "category_daily": sorted(parsed.get("category_daily", []), key=lambda r: (r["date"], r["category"])),
+        "keywords_monthly": sorted(
+            parsed.get("keywords_monthly", []), key=lambda r: (r["month"], -r["count"], r["keyword"])
+        ),
+        "role_monthly": sorted(parsed.get("role_monthly", []), key=lambda r: r["month"]),
+    }
+
+
+def build_dashboard_codex_payload(parsed: dict) -> dict:
+    codex_match = parsed.get("codex_match")
+    return codex_match if isinstance(codex_match, dict) else {}
+
+
+def build_dashboard_html() -> str:
+    return """<!doctype html>
 <html lang="ja">
 <head>
   <meta charset="utf-8" />
@@ -1845,53 +1920,78 @@ def build_dashboard_html(parsed: dict) -> str:
   <title>ChatGPT / Codex 活動ダッシュボード</title>
   <style>
     :root {
-      --bg: #f5f7fb;
+      --bg: #f4f7fb;
       --card: #ffffff;
       --line: #d8e0ea;
       --ink: #1d2733;
       --muted: #5d6b7c;
       --primary: #1b67d6;
       --soft: #e9f1ff;
-      --warn-soft: #fff2e8;
+      --warn: #fff2e8;
+      --error: #fde8e8;
       --radius: 14px;
     }
     * { box-sizing: border-box; }
-    body { margin: 0; background: var(--bg); color: var(--ink); font-family: "Segoe UI", "Yu Gothic UI", "Meiryo", sans-serif; line-height: 1.5; }
-    .wrap { max-width: 1280px; margin: 0 auto; padding: 20px 16px 32px; display: grid; gap: 16px; }
-    .panel { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; box-shadow: 0 4px 16px rgba(25,45,65,0.06); }
-    h1 { margin: 0; font-size: 1.45rem; }
-    h2 { margin: 0 0 8px; font-size: 1.08rem; }
-    h3 { margin: 0; font-size: 0.95rem; }
+    body { margin: 0; background: radial-gradient(circle at top left, #eef4ff 0, #f4f7fb 42%, #eef3f8 100%); color: var(--ink); font-family: "Segoe UI", "Yu Gothic UI", "Meiryo", sans-serif; line-height: 1.5; }
+    .wrap { max-width: 1280px; margin: 0 auto; padding: 20px 16px 40px; display: grid; gap: 16px; }
+    .panel { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; box-shadow: 0 4px 18px rgba(25,45,65,0.06); }
+    h1, h2, h3 { margin: 0; }
+    h1 { font-size: 1.5rem; }
+    h2 { font-size: 1.08rem; margin-bottom: 8px; }
+    h3 { font-size: 0.98rem; margin-top: 12px; }
     .sub { color: var(--muted); margin-top: 4px; font-size: 0.92rem; }
-    .meta { color: var(--muted); font-size: 0.85rem; display: flex; gap: 12px; flex-wrap: wrap; margin-top: 8px; }
+    .meta, .status-line { color: var(--muted); font-size: 0.85rem; display: flex; gap: 12px; flex-wrap: wrap; margin-top: 8px; }
     .toolbar { display: flex; justify-content: space-between; gap: 12px; align-items: center; flex-wrap: wrap; }
-    .toggle { display: inline-flex; align-items: center; gap: 6px; font-size: 0.88rem; color: var(--muted); }
-    .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; }
-    .card { border: 1px solid var(--line); border-radius: 10px; padding: 10px; background: linear-gradient(180deg, #fff, #f9fcff); }
+    .actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+    button {
+      border: 1px solid var(--primary);
+      background: var(--primary);
+      color: white;
+      border-radius: 10px;
+      padding: 8px 12px;
+      font-size: 0.9rem;
+      cursor: pointer;
+    }
+    button.secondary { background: #fff; color: var(--primary); }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; }
+    .card { border: 1px solid var(--line); border-radius: 12px; padding: 10px; background: linear-gradient(180deg, #fff, #f9fcff); }
     .card.emph { background: linear-gradient(180deg, #fff, var(--soft)); }
     .label { font-size: 0.78rem; color: var(--muted); }
-    .value { margin-top: 4px; font-size: 1.2rem; font-weight: 700; }
+    .value { margin-top: 4px; font-size: 1.15rem; font-weight: 700; }
     .unit { font-size: 0.76rem; color: var(--muted); }
     .muted { color: var(--muted); }
-    .note { margin-top: 8px; border-left: 4px solid #f2b07d; background: var(--warn-soft); padding: 8px 10px; border-radius: 8px; font-size: 0.86rem; color: #7c4a21; }
+    .note { margin-top: 8px; border-left: 4px solid #f2b07d; background: var(--warn); padding: 8px 10px; border-radius: 8px; font-size: 0.86rem; color: #7c4a21; }
+    .error { margin-top: 8px; border-left: 4px solid #c53030; background: var(--error); padding: 8px 10px; border-radius: 8px; color: #8b1d1d; }
     .list { display: grid; gap: 10px; }
-    .row { border: 1px solid var(--line); border-radius: 10px; padding: 10px; background: #fff; }
+    .row { border: 1px solid var(--line); border-radius: 12px; padding: 10px; background: #fff; }
     .row-grid { display: grid; grid-template-columns: 120px 1fr repeat(4, minmax(90px, 120px)); gap: 8px; align-items: start; }
     .num { text-align: right; font-variant-numeric: tabular-nums; }
     .title { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; line-height: 1.35; }
     .chip { display: inline-block; border-radius: 999px; border: 1px solid #bdd1f5; background: var(--soft); color: #1d4fa6; padding: 2px 8px; font-size: 0.75rem; white-space: nowrap; }
-    details { margin-top: 8px; border-top: 1px dashed var(--line); padding-top: 8px; }
-    details > summary { cursor: pointer; color: var(--primary); font-size: 0.86rem; font-weight: 600; }
-    .detail-grid { margin-top: 8px; display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 6px 10px; font-size: 0.86rem; }
-    .raw { margin-top: 8px; background: #f8fafc; border: 1px dashed var(--line); border-radius: 8px; padding: 8px; font-size: 0.8rem; color: #425166; }
-    .filters { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; margin-top: 8px; margin-bottom: 6px; }
-    label { display: block; font-size: 0.8rem; color: var(--muted); margin-bottom: 4px; }
-    input, select { width: 100%; border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; background: #fff; font-size: 0.9rem; color: var(--ink); }
     .kv { display: flex; justify-content: space-between; gap: 10px; font-size: 0.86rem; border-bottom: 1px dotted var(--line); padding: 3px 0; }
     .kv:last-child { border-bottom: 0; }
+    .filters { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; margin-top: 8px; margin-bottom: 6px; }
+    label { display: block; font-size: 0.8rem; color: var(--muted); margin-bottom: 4px; }
+    input, select {
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 8px 10px;
+      background: #fff;
+      font-size: 0.9rem;
+      color: var(--ink);
+    }
     .empty { color: var(--muted); font-size: 0.9rem; padding: 8px 0; }
+    .range { font-size: 0.86rem; color: var(--muted); margin-top: 6px; }
+    .section-body[aria-busy="true"] { opacity: 0.7; }
+    .more-wrap { display: flex; justify-content: center; padding-top: 4px; }
+    .more-wrap button { min-width: 180px; }
     .codex-list .row-grid { grid-template-columns: 110px 90px 80px 1fr; }
     .snippet { word-break: break-word; color: #334155; }
+    details { margin-top: 8px; border-top: 1px dashed var(--line); padding-top: 8px; }
+    details > summary { cursor: pointer; color: var(--primary); font-size: 0.86rem; font-weight: 600; }
+    .mono { font-variant-numeric: tabular-nums; }
     @media (max-width: 960px) {
       .row-grid { grid-template-columns: 1fr 1fr; }
       .num { text-align: left; }
@@ -1905,23 +2005,20 @@ def build_dashboard_html(parsed: dict) -> str:
       <div class="toolbar">
         <div>
           <h1>ChatGPT / Codex 活動ダッシュボード</h1>
-          <div class="sub">ローカルファイル専用表示・タイムゾーン: <span id="tz"></span></div>
+          <div class="sub">最初に読むのはサマリーだけ。詳細はボタンで段階的に読み込みます。</div>
         </div>
-        <label class="toggle"><input type="checkbox" id="detailToggle" /> 詳細データを表示</label>
+        <div class="actions">
+          <span class="chip" id="summaryPhase">読み込み待ち</span>
+        </div>
       </div>
       <div class="meta" id="metaInfo"></div>
+      <div class="status-line" id="summaryStatus">読み込み中...</div>
     </section>
 
     <section class="panel">
       <h2>全体サマリー</h2>
       <div class="cards" id="summaryCards"></div>
-      <div class="note">推定トークンはChatGPTエクスポート本文をローカルで概算した値です。OpenAIの課金トークンや公式利用量ではありません。</div>
-    </section>
-
-    <section class="panel">
-      <h2>2026年4月のまとめ</h2>
-      <div class="cards" id="aprilCards"></div>
-      <div class="empty" id="aprilEmpty"></div>
+      <div class="note">推定トークンはローカルで概算した値です。OpenAIの課金トークンや公式利用量ではありません。</div>
     </section>
 
     <section class="panel">
@@ -1930,90 +2027,164 @@ def build_dashboard_html(parsed: dict) -> str:
     </section>
 
     <section class="panel">
-      <h2>会話スレッド一覧</h2>
+      <div class="toolbar">
+        <div>
+          <h2>会話一覧</h2>
+          <div class="sub">会話一覧用の別JSONを、必要になった時だけ読み込みます。ページング表示です。</div>
+        </div>
+        <div class="actions">
+          <button type="button" id="loadConversationsBtn">会話一覧を読み込む（ページング表示）</button>
+          <span class="chip" id="conversationState">未読み込み</span>
+        </div>
+      </div>
       <div class="filters">
         <div>
-          <label for="titleSearch">タイトル検索</label>
-          <input id="titleSearch" type="text" placeholder="タイトル・キーワードで検索" />
+          <label for="titleSearch">タイトル・キーワード検索</label>
+          <input id="titleSearch" type="text" placeholder="読み込み後に使えます" disabled />
         </div>
         <div>
           <label for="monthFilter">年月フィルタ</label>
-          <select id="monthFilter"></select>
+          <select id="monthFilter" disabled>
+            <option value="all">読み込み後に選択</option>
+          </select>
         </div>
         <div>
-          <label for="categoryFilter">分類フィルタ</label>
-          <select id="categoryFilter"></select>
+          <label for="categoryFilter">カテゴリフィルタ</label>
+          <select id="categoryFilter" disabled>
+            <option value="all">読み込み後に選択</option>
+          </select>
         </div>
         <div>
           <label for="sortBy">表示順</label>
-          <select id="sortBy">
+          <select id="sortBy" disabled>
             <option value="messages_desc">合計メッセージが多い順</option>
             <option value="last_desc">終了が新しい順</option>
           </select>
         </div>
       </div>
-      <div class="muted" id="conversationCount"></div>
+      <div class="range" id="conversationCount">未読み込み</div>
+      <div class="status-line" id="conversationStatus"></div>
       <div class="list" id="conversationList"></div>
     </section>
 
     <section class="panel">
-      <h2>日別: あなたの発言数（上位スレッド）</h2>
-      <label for="daySelect">日付</label>
-      <select id="daySelect"></select>
-      <div class="list" id="dailyTopList" style="margin-top:8px;"></div>
+      <div class="toolbar">
+        <div>
+          <h2>日別詳細</h2>
+          <div class="sub">日別・時間帯別の詳細は、必要なときだけ読み込みます。</div>
+        </div>
+        <div class="actions">
+          <button type="button" id="loadDailyBtn">日別詳細を読み込む（時間帯・上位会話を含む）</button>
+          <span class="chip" id="dailyState">未読み込み</span>
+        </div>
+      </div>
+      <div class="filters">
+        <div>
+          <label for="daySelect">日付</label>
+          <select id="daySelect" disabled>
+            <option value="">読み込み後に選択</option>
+          </select>
+        </div>
+      </div>
+      <div class="status-line" id="dailyStatus"></div>
+      <div class="list" id="dailyList"></div>
+      <details id="dailyHourlyDetails" hidden>
+        <summary>時間帯別の詳細</summary>
+        <div class="list" id="dailyHourlyList" style="margin-top:8px;"></div>
+      </details>
     </section>
 
-    <section class="panel" id="codexPanel">
-      <h2>2026年4月 Codex突合</h2>
-      <ul class="muted">
-        <li>ChatGPT側の数は「ChatGPT内で生成されたCodex向け完成プロンプト数」。</li>
-        <li>Codex側の数は「Codexローカルログに残っているuser_message数」。</li>
-        <li>matchedは「正規化後に一致または高類似と判定されたもの」。</li>
-        <li>chat_onlyは「作ったが投げていない可能性、または編集して投げたため一致しなかった可能性」。</li>
-        <li>codex_onlyは「ChatGPTを経由せずCodexへ直接入力した可能性、またはChatGPT側抽出に失敗した可能性」。</li>
-        <li>これはOpenAIの課金トークンや公式利用回数ではなく、ローカルログ解析による実用集計。</li>
-      </ul>
+    <section class="panel">
+      <div class="toolbar">
+        <div>
+          <h2>カテゴリ・キーワード詳細</h2>
+          <div class="sub">カテゴリやキーワードの別JSONを、必要なときだけ読み込みます。</div>
+        </div>
+        <div class="actions">
+          <button type="button" id="loadCategoriesBtn">カテゴリ詳細を読み込む</button>
+          <span class="chip" id="categoriesState">未読み込み</span>
+        </div>
+      </div>
+      <div class="status-line" id="categoriesStatus"></div>
+      <div class="list" id="categoryMonthlyList"></div>
+      <h3>カテゴリの日別詳細</h3>
+      <div class="list" id="categoryDailyList"></div>
+      <h3>月別キーワード</h3>
+      <div class="list" id="keywordsMonthlyList"></div>
+    </section>
+
+    <section class="panel">
+      <div class="toolbar">
+        <div>
+          <h2>Codex照合詳細</h2>
+          <div class="sub">照合結果は初期表示に含めず、必要時のみ読み込みます。</div>
+        </div>
+        <div class="actions">
+          <button type="button" id="loadCodexBtn">Codex照合を読み込む（詳細は後から表示）</button>
+          <span class="chip" id="codexState">未読み込み</span>
+        </div>
+      </div>
+      <div class="status-line" id="codexStatus"></div>
       <div class="cards" id="codexSummaryCards"></div>
-      <h3 style="margin-top:12px;">一致一覧</h3>
+      <h3>一致一覧</h3>
       <div class="list codex-list" id="codexMatchedList"></div>
-      <h3 style="margin-top:12px;">ChatGPT側だけにあるもの</h3>
+      <h3>ChatGPT側だけにあるもの</h3>
       <div class="list codex-list" id="codexChatOnlyList"></div>
-      <h3 style="margin-top:12px;">Codex側だけにあるもの</h3>
+      <h3>Codex側だけにあるもの</h3>
       <div class="list codex-list" id="codexOnlyList"></div>
     </section>
   </div>
 
-  <script id="data" type="application/json">__PAYLOAD__</script>
   <script>
-    const DATA = JSON.parse(document.getElementById("data").textContent);
-    const MONTHLY = (DATA.monthly || []).slice().sort((a, b) => a.month.localeCompare(b.month));
-    const DAILY = (DATA.daily || []).slice().sort((a, b) => a.date.localeCompare(b.date));
-    const DTC = (DATA.daily_top_conversations || []).slice();
-    const INDEX = (DATA.conversation_index || []).slice();
-    const CODEX = DATA.codex_match || null;
-
+    const FILES = {
+      summary: "dashboard_summary.json",
+      conversations: "dashboard_conversations.json",
+      daily: "dashboard_daily.json",
+      categories: "dashboard_categories.json",
+      codex: "dashboard_codex_match.json",
+    };
     const state = {
-      titleSearch: "",
-      monthFilter: "all",
-      categoryFilter: "all",
-      sortBy: "messages_desc",
-      selectedDay: DAILY.length ? DAILY[DAILY.length - 1].date : "",
-      developerMode: false,
+      summary: null,
+      conversations: null,
+      daily: null,
+      categories: null,
+      codex: null,
+      conversationFilters: {
+        titleSearch: "",
+        monthFilter: "all",
+        categoryFilter: "all",
+        sortBy: "messages_desc",
+      },
+      conversationVisibleCount: 50,
+      conversationLoading: false,
+      conversationLoaded: false,
+      dailySelected: "",
+      dailyLoading: false,
+      dailyLoaded: false,
+      categoriesLoading: false,
+      categoriesLoaded: false,
+      codexLoading: false,
+      codexLoaded: false,
+      codexVisibleCounts: {
+        matched: 30,
+        chatOnly: 30,
+        codexOnly: 30,
+      },
     };
 
     const fmtInt = (v) => Number(v || 0).toLocaleString("ja-JP");
     const fmtDec = (v) => Number(v || 0).toLocaleString("ja-JP", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
-    const monthOfIso = (iso) => (iso && iso.length >= 7 ? iso.slice(0, 7) : "");
-    const monthToJp = (month) => {
-      if (!month || !/^\d{4}-\d{2}$/.test(month)) return month || "-";
-      return `${month.slice(0, 4)}?${month.slice(5, 7)}?`;
-    };
     const escapeHtml = (value) =>
       String(value ?? "")
         .replaceAll("&", "&amp;")
         .replaceAll("<", "&lt;")
         .replaceAll(">", "&gt;")
         .replaceAll('"', "&quot;");
+    const monthToJp = (month) => {
+      if (!month || !/^\\d{4}-\\d{2}$/.test(month)) return month || "-";
+      return `${month.slice(0, 4)}年${month.slice(5, 7)}月`;
+    };
+    const monthOfIso = (iso) => (iso && iso.length >= 7 ? iso.slice(0, 7) : "");
 
     function parseIso(iso) {
       if (!iso) return null;
@@ -2022,9 +2193,8 @@ def build_dashboard_html(parsed: dict) -> str:
     }
 
     function fmtDateShort(dateText) {
-      if (!dateText) return "";
       const d = parseIso(dateText);
-      if (!d) return dateText;
+      if (!d) return dateText || "-";
       const y = d.getFullYear();
       const m = String(d.getMonth() + 1).padStart(2, "0");
       const day = String(d.getDate()).padStart(2, "0");
@@ -2034,11 +2204,6 @@ def build_dashboard_html(parsed: dict) -> str:
     }
 
     function fmtPeriod(firstIso, lastIso) {
-      const a = parseIso(firstIso);
-      const b = parseIso(lastIso);
-      if (!a && !b) return "-";
-      if (a && !b) return fmtDateShort(firstIso);
-      if (!a && b) return fmtDateShort(lastIso);
       const start = fmtDateShort(firstIso);
       const end = fmtDateShort(lastIso);
       if (start.slice(0, 10) === end.slice(0, 10)) {
@@ -2047,80 +2212,71 @@ def build_dashboard_html(parsed: dict) -> str:
       return `${start} → ${end}`;
     }
 
-    function renderHeader() {
-      const tz = DATA.meta?.timezone || "unknown";
-      document.getElementById("tz").textContent = tz;
-      const stats = DATA.meta?.stats || {};
-      document.getElementById("metaInfo").innerHTML = [
+    function setStatus(id, message, kind = "info") {
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.className = kind === "error" ? "error" : "status-line";
+      el.textContent = message;
+    }
+
+    function setChip(id, value) {
+      const el = document.getElementById(id);
+      if (el) el.textContent = value;
+    }
+
+    async function fetchJson(path) {
+      const response = await fetch(path, { cache: "no-store" });
+      if (!response.ok) {
+        throw new Error(`${path} の取得に失敗しました (${response.status})`);
+      }
+      return response.json();
+    }
+
+    function renderMeta(summary) {
+      const stats = summary?.meta?.stats || {};
+      const metaInfo = [
+        `生成時刻: ${summary?.meta?.generated_at || "-"}`,
+        `タイムゾーン: ${summary?.meta?.timezone || "-"}`,
         `入力会話オブジェクト: ${fmtInt(stats.total_conversation_objects || 0)}`,
         `ユニークメッセージ: ${fmtInt(stats.total_unique_messages || 0)}`,
         `重複スキップ: ${fmtInt(stats.total_duplicate_messages_skipped || 0)}`,
-      ].map((x) => `<span>${escapeHtml(x)}</span>`).join("");
+      ];
+      document.getElementById("metaInfo").innerHTML = metaInfo.map((text) => `<span>${escapeHtml(text)}</span>`).join("");
+      setChip("summaryPhase", "サマリー表示中");
     }
 
-    function renderSummaryCards() {
-      const stats = DATA.meta?.stats || {};
-      const totalUser = MONTHLY.reduce((acc, row) => acc + Number(row.user_messages || 0), 0);
-      const totalAssistant = MONTHLY.reduce((acc, row) => acc + Number(row.assistant_messages || 0), 0);
-      const totalTokens = MONTHLY.reduce((acc, row) => acc + Number(row.total_tokens_est || 0), 0);
-      const activeDays = MONTHLY.reduce((acc, row) => acc + Number(row.active_days || 0), 0);
-      const peakMonth = MONTHLY.length
-        ? MONTHLY.reduce((best, row) => (Number(row.user_messages || 0) > Number(best.user_messages || 0) ? row : best), MONTHLY[0])
-        : null;
-      const peakDay = DAILY.length
-        ? DAILY.reduce((best, row) => (Number(row.user_messages || 0) > Number(best.user_messages || 0) ? row : best), DAILY[0])
+    function renderSummaryCards(summary) {
+      const stats = summary?.meta?.stats || {};
+      const monthly = summary?.monthly || [];
+      const totalUser = monthly.reduce((acc, row) => acc + Number(row.user_messages || 0), 0);
+      const totalAssistant = monthly.reduce((acc, row) => acc + Number(row.assistant_messages || 0), 0);
+      const totalTokens = monthly.reduce((acc, row) => acc + Number(row.total_tokens_est || 0), 0);
+      const activeDays = monthly.reduce((acc, row) => acc + Number(row.active_days || 0), 0);
+      const peakMonth = monthly.length
+        ? monthly.reduce((best, row) => (Number(row.user_messages || 0) > Number(best.user_messages || 0) ? row : best), monthly[0])
         : null;
       const cards = [
         ["総メッセージ数", fmtInt(stats.total_unique_messages || 0), ""],
         ["あなたの発言数", fmtInt(totalUser), ""],
         ["AI返答数", fmtInt(totalAssistant), ""],
-        ["会話スレッド数", fmtInt(stats.total_conversations || INDEX.length), ""],
+        ["会話スレッド数", fmtInt(stats.total_conversations || 0), ""],
         ["活動日数", fmtInt(activeDays), "日"],
         ["推定総トークン", fmtInt(totalTokens), "tok"],
         ["一番多かった月", peakMonth ? `${monthToJp(peakMonth.month)} (${fmtInt(peakMonth.user_messages)})` : "-", ""],
-        ["一番多かった日", peakDay ? `${peakDay.date.replaceAll("-", "/")} (${fmtInt(peakDay.user_messages)})` : "-", ""],
       ];
       document.getElementById("summaryCards").innerHTML = cards
         .map(([label, value, unit]) => `<div class="card"><div class="label">${escapeHtml(label)}</div><div class="value">${escapeHtml(value)}</div>${unit ? `<div class="unit">${escapeHtml(unit)}</div>` : ""}</div>`)
         .join("");
     }
 
-    function renderAprilCards() {
-      const april = MONTHLY.find((row) => row.month === "2026-04");
-      const cardsRoot = document.getElementById("aprilCards");
-      const empty = document.getElementById("aprilEmpty");
-      if (!april) {
-        cardsRoot.innerHTML = "";
-        empty.textContent = "2026年4月のデータはありません。";
-        return;
-      }
-      empty.textContent = "";
-      const cards = [
-        ["会話スレッド数", fmtInt(april.conversations), ""],
-        ["あなたの発言数", fmtInt(april.user_messages), ""],
-        ["AI返答数", fmtInt(april.assistant_messages), ""],
-        ["推定総トークン", fmtInt(april.total_tokens_est), "tok"],
-        ["あなたの入力トークン", fmtInt(april.user_tokens_est), "tok"],
-        ["AI返答トークン", fmtInt(april.assistant_tokens_est), "tok"],
-        ["活動日数", fmtInt(april.active_days), "日"],
-        ["1日平均発言数", fmtDec(april.avg_per_elapsed_day), ""],
-        ["中央値", fmtDec(april.median_daily_user_messages), ""],
-        ["最大日の発言数", fmtInt(april.peak_daily_user_messages), ""],
-        ["最大日の日付", (april.peak_daily_date || "").replaceAll("-", "/"), ""],
-      ];
-      cardsRoot.innerHTML = cards
-        .map(([label, value, unit]) => `<div class="card emph"><div class="label">${escapeHtml(label)}</div><div class="value">${escapeHtml(value)}</div>${unit ? `<div class="unit">${escapeHtml(unit)}</div>` : ""}</div>`)
-        .join("");
-    }
-
-    function renderMonthlyList() {
+    function renderMonthlyList(summary) {
+      const monthly = (summary?.monthly || []).slice().sort((a, b) => b.month.localeCompare(a.month));
       const root = document.getElementById("monthlyList");
-      if (!MONTHLY.length) {
+      if (!monthly.length) {
         root.innerHTML = `<div class="empty">月別データがありません。</div>`;
         return;
       }
-      const ordered = MONTHLY.slice().sort((a, b) => b.month.localeCompare(a.month));
-      root.innerHTML = ordered.map((row) => `
+      root.innerHTML = monthly.map((row) => `
         <article class="row">
           <div class="row-grid">
             <div><span class="chip">${escapeHtml(monthToJp(row.month))}</span></div>
@@ -2133,121 +2289,181 @@ def build_dashboard_html(parsed: dict) -> str:
           </div>
           <details>
             <summary>詳細</summary>
-            <div class="detail-grid">
-              <div class="kv"><span>あなたの入力トークン</span><strong>${fmtInt(row.user_tokens_est)} tok</strong></div>
-              <div class="kv"><span>AI返答トークン</span><strong>${fmtInt(row.assistant_tokens_est)} tok</strong></div>
-              <div class="kv"><span>systemトークン</span><strong>${fmtInt(row.system_tokens_est || 0)} tok</strong></div>
-              <div class="kv"><span>toolトークン</span><strong>${fmtInt(row.tool_tokens_est || 0)} tok</strong></div>
-              <div class="kv"><span>1発言あたり入力トークン</span><strong>${fmtDec(row.avg_user_tokens_est)}</strong></div>
-              <div class="kv"><span>1日あたり推定トークン</span><strong>${fmtDec(row.avg_tokens_per_active_day_est)}</strong></div>
-              <div class="kv"><span>1日の中央値</span><strong>${fmtDec(row.median_daily_user_messages)}</strong></div>
-              <div class="kv"><span>最大日の日付</span><strong>${escapeHtml((row.peak_daily_date || "").replaceAll("-", "/"))}</strong></div>
-              <div class="kv"><span>最大日の発言数</span><strong>${fmtInt(row.peak_daily_user_messages)}</strong></div>
-            </div>
-            ${state.developerMode ? `<div class="raw">month: ${escapeHtml(row.month)} / user_tokens_est: ${fmtInt(row.user_tokens_est)} / assistant_tokens_est: ${fmtInt(row.assistant_tokens_est)}</div>` : ""}
+            <div class="kv"><span>あなたの入力トークン</span><strong>${fmtInt(row.user_tokens_est)} tok</strong></div>
+            <div class="kv"><span>AI返答トークン</span><strong>${fmtInt(row.assistant_tokens_est)} tok</strong></div>
+            <div class="kv"><span>1発言あたり入力トークン</span><strong>${fmtDec(row.avg_user_tokens_est)}</strong></div>
+            <div class="kv"><span>1日あたり推定トークン</span><strong>${fmtDec(row.avg_tokens_per_active_day_est)}</strong></div>
+            <div class="kv"><span>最大日の日付</span><strong>${escapeHtml((row.peak_daily_date || "").replaceAll("-", "/"))}</strong></div>
           </details>
         </article>
       `).join("");
     }
 
-    function setupFilters() {
-      const months = Array.from(new Set(INDEX.map((row) => monthOfIso(row.last_message_at)).filter(Boolean))).sort();
-      const categories = Array.from(new Set(INDEX.map((row) => row.inferred_category || "その他"))).sort();
-      const monthFilter = document.getElementById("monthFilter");
-      const categoryFilter = document.getElementById("categoryFilter");
-      monthFilter.innerHTML = `<option value="all">すべて</option>` + months.map((m) => `<option value="${m}">${monthToJp(m)}</option>`).join("");
-      categoryFilter.innerHTML = `<option value="all">すべて</option>` + categories.map((c) => `<option value="${c}">${escapeHtml(c)}</option>`).join("");
-      monthFilter.value = state.monthFilter;
-      categoryFilter.value = state.categoryFilter;
+    function setConversationControlsEnabled(enabled) {
+      for (const id of ["titleSearch", "monthFilter", "categoryFilter", "sortBy"]) {
+        document.getElementById(id).disabled = !enabled;
+      }
     }
 
-    function filterConversationRows() {
-      let rows = INDEX.slice();
-      const q = state.titleSearch.trim().toLowerCase();
+    function availableConversationRows() {
+      const rows = (state.conversations?.items || []).slice();
+      const q = state.conversationFilters.titleSearch.trim().toLowerCase();
+      let filtered = rows;
       if (q) {
-        rows = rows.filter((row) => {
+        filtered = filtered.filter((row) => {
           const title = String(row.title || "").toLowerCase();
           const keywords = (Array.isArray(row.top_keywords) ? row.top_keywords : []).join(" ").toLowerCase();
           return title.includes(q) || keywords.includes(q);
         });
       }
-      if (state.monthFilter !== "all") {
-        rows = rows.filter((row) => monthOfIso(row.last_message_at) === state.monthFilter);
+      if (state.conversationFilters.monthFilter !== "all") {
+        filtered = filtered.filter((row) => monthOfIso(row.last_message_at) === state.conversationFilters.monthFilter);
       }
-      if (state.categoryFilter !== "all") {
-        rows = rows.filter((row) => (row.inferred_category || "その他") === state.categoryFilter);
+      if (state.conversationFilters.categoryFilter !== "all") {
+        filtered = filtered.filter((row) => (row.inferred_category || "その他") === state.conversationFilters.categoryFilter);
       }
-      rows.sort((a, b) => {
-        if (state.sortBy === "last_desc") {
+      filtered.sort((a, b) => {
+        if (state.conversationFilters.sortBy === "last_desc") {
           return String(b.last_message_at || "").localeCompare(String(a.last_message_at || ""));
         }
         const totalDiff = Number(b.total_message_count || 0) - Number(a.total_message_count || 0);
         if (totalDiff !== 0) return totalDiff;
         return String(b.last_message_at || "").localeCompare(String(a.last_message_at || ""));
       });
-      return rows;
+      return filtered;
+    }
+
+    function renderConversationFilters(rows) {
+      const months = Array.from(new Set(rows.map((row) => monthOfIso(row.last_message_at)).filter(Boolean))).sort();
+      const categories = Array.from(new Set(rows.map((row) => row.inferred_category || "その他"))).sort();
+      const monthFilter = document.getElementById("monthFilter");
+      const categoryFilter = document.getElementById("categoryFilter");
+      monthFilter.innerHTML = `<option value="all">すべて</option>` + months.map((m) => `<option value="${m}">${monthToJp(m)}</option>`).join("");
+      categoryFilter.innerHTML = `<option value="all">すべて</option>` + categories.map((c) => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join("");
+      monthFilter.value = state.conversationFilters.monthFilter;
+      categoryFilter.value = state.conversationFilters.categoryFilter;
+      document.getElementById("sortBy").value = state.conversationFilters.sortBy;
     }
 
     function renderConversationList() {
-      const rows = filterConversationRows();
       const root = document.getElementById("conversationList");
-      document.getElementById("conversationCount").textContent = `表示件数: ${fmtInt(rows.length)} / 全${fmtInt(INDEX.length)}件`;
+      const count = document.getElementById("conversationCount");
+      if (!state.conversationLoaded) {
+        root.innerHTML = `<div class="empty">会話一覧はまだ読み込まれていません。</div>`;
+        count.textContent = "未読み込み";
+        return;
+      }
+      const rows = availableConversationRows();
+      const visible = rows.slice(0, state.conversationVisibleCount);
+      count.textContent = `表示中: 1-${Math.min(visible.length, rows.length)} / 全${fmtInt(rows.length)}件`;
       if (!rows.length) {
         root.innerHTML = `<div class="empty">条件に一致する会話スレッドがありません。</div>`;
         return;
       }
-      root.innerHTML = rows.map((row) => {
-        const keywords = Array.isArray(row.top_keywords) ? row.top_keywords : [];
-        return `
-          <article class="row">
-            <div class="row-grid">
-              <div>
-                <div class="label">タイトル</div>
-                <div class="title" title="${escapeHtml(row.title || "")}">${escapeHtml(row.title || "(untitled)")}</div>
+      const more = rows.length > visible.length;
+      root.innerHTML = `
+        ${visible.map((row) => {
+          const keywords = Array.isArray(row.top_keywords) ? row.top_keywords : [];
+          return `
+            <article class="row">
+              <div class="row-grid">
+                <div>
+                  <div class="label">タイトル</div>
+                  <div class="title" title="${escapeHtml(row.title || "")}">${escapeHtml(row.title || "(untitled)")}</div>
+                </div>
+                <div>
+                  <div class="label">分類</div>
+                  <div><span class="chip">${escapeHtml(row.inferred_category || "その他")}</span></div>
+                </div>
+                <div class="num"><div class="label">あなたの発言</div><div>${fmtInt(row.user_message_count)}</div></div>
+                <div class="num"><div class="label">AI返答</div><div>${fmtInt(row.assistant_message_count)}</div></div>
+                <div class="num"><div class="label">合計</div><div>${fmtInt(row.total_message_count)}</div></div>
+                <div>
+                  <div class="label">期間</div>
+                  <div class="mono">${escapeHtml(fmtPeriod(row.first_message_at, row.last_message_at))}</div>
+                </div>
               </div>
-              <div>
-                <div class="label">分類</div>
-                <div><span class="chip">${escapeHtml(row.inferred_category || "その他")}</span></div>
-              </div>
-              <div class="num"><div class="label">あなたの発言</div><div>${fmtInt(row.user_message_count)}</div></div>
-              <div class="num"><div class="label">AI返答</div><div>${fmtInt(row.assistant_message_count)}</div></div>
-              <div class="num"><div class="label">合計</div><div>${fmtInt(row.total_message_count)}</div></div>
-              <div>
-                <div class="label">期間</div>
-                <div>${escapeHtml(fmtPeriod(row.first_message_at, row.last_message_at))}</div>
-              </div>
-            </div>
-            <div style="margin-top:6px;"><span class="label">キーワード:</span> <span class="snippet">${escapeHtml(keywords.join(", "))}</span></div>
-            ${state.developerMode ? `<div class="raw">conversation_id: ${escapeHtml(row.conversation_id || "")}<br/>raw start: ${escapeHtml(row.first_message_at || "")}<br/>raw end: ${escapeHtml(row.last_message_at || "")}<br/>raw category: ${escapeHtml(row.inferred_category || "")}<br/>raw top_keywords: ${escapeHtml(keywords.join("|"))}</div>` : ""}
-          </article>
-        `;
-      }).join("");
+              <div style="margin-top:6px;"><span class="label">キーワード:</span> <span class="snippet">${escapeHtml(keywords.join(", "))}</span></div>
+            </article>
+          `;
+        }).join("")}
+        ${more ? `<div class="more-wrap"><button type="button" id="conversationMoreBtn">さらに表示</button></div>` : ""}
+      `;
+      const moreBtn = document.getElementById("conversationMoreBtn");
+      if (moreBtn) {
+        moreBtn.addEventListener("click", () => {
+          state.conversationVisibleCount += 50;
+          renderConversationList();
+        });
+      }
     }
 
-    function setupDailySelect() {
-      const select = document.getElementById("daySelect");
-      if (!DAILY.length) {
-        select.innerHTML = `<option value="">データなし</option>`;
-        state.selectedDay = "";
-        return;
-      }
-      select.innerHTML = DAILY.map((row) => `<option value="${row.date}">${row.date.replaceAll("-", "/")}</option>`).join("");
-      if (!state.selectedDay) state.selectedDay = DAILY[DAILY.length - 1].date;
-      select.value = state.selectedDay;
+    function renderConversationSection() {
+      const rows = (state.conversations?.items || []).slice();
+      if (!rows.length) return;
+      renderConversationFilters(rows);
+      renderConversationList();
+      setConversationControlsEnabled(true);
+      setChip("conversationState", "読み込み済み");
+      setStatus("conversationStatus", `読み込み完了: ${fmtInt(rows.length)}件`);
     }
 
-    function renderDailyTop() {
-      const root = document.getElementById("dailyTopList");
-      if (!state.selectedDay) {
-        root.innerHTML = `<div class="empty">日付を選択してください。</div>`;
+    function loadConversationSection() {
+      if (state.conversationLoading || state.conversationLoaded) return;
+      state.conversationLoading = true;
+      setChip("conversationState", "読み込み中");
+      setStatus("conversationStatus", "会話一覧JSONを読み込んでいます...");
+      fetchJson(FILES.conversations)
+        .then((data) => {
+          state.conversations = data;
+          state.conversationLoaded = true;
+          state.conversationVisibleCount = 50;
+          state.conversationLoading = false;
+          renderConversationSection();
+        })
+        .catch((error) => {
+          state.conversationLoading = false;
+          setChip("conversationState", "読み込み失敗");
+          setStatus(
+            "conversationStatus",
+            `会話一覧の読み込みに失敗しました。ローカルHTTPサーバーで開いているか確認してください。${error.message}`,
+            "error",
+          );
+        });
+    }
+
+    function renderDailyList() {
+      const root = document.getElementById("dailyList");
+      if (!state.dailyLoaded) {
+        root.innerHTML = `<div class="empty">日別詳細はまだ読み込まれていません。</div>`;
         return;
       }
-      const rows = DTC.filter((row) => row.date === state.selectedDay).sort((a, b) => Number(a.rank || 0) - Number(b.rank || 0));
-      if (!rows.length) {
-        root.innerHTML = `<div class="empty">この日の上位スレッドはありません。</div>`;
-        return;
-      }
+      const rows = (state.daily?.daily || []).slice();
       root.innerHTML = rows.map((row) => `
+        <article class="row">
+          <div class="row-grid">
+            <div><span class="chip">${escapeHtml(row.date.replaceAll("-", "/"))}</span></div>
+            <div></div>
+            <div class="num"><div class="label">あなたの発言数</div><div>${fmtInt(row.user_messages)}</div></div>
+            <div class="num"><div class="label">会話数</div><div>${fmtInt(row.conversations)}</div></div>
+            <div></div>
+            <div><span class="chip">${escapeHtml(monthToJp(row.month))}</span></div>
+          </div>
+        </article>
+      `).join("");
+    }
+
+    function renderDailyTopForSelectedDay() {
+      const root = document.getElementById("dailyHourlyList");
+      const details = document.getElementById("dailyHourlyDetails");
+      if (!state.dailyLoaded || !state.dailySelected) {
+        root.innerHTML = `<div class="empty">日付を選択してください。</div>`;
+        details.hidden = true;
+        return;
+      }
+      const dailyRows = (state.daily?.daily_top_conversations || []).filter((row) => row.date === state.dailySelected).sort((a, b) => Number(a.rank || 0) - Number(b.rank || 0));
+      const hourlyRows = (state.daily?.daily_hourly || []).filter((row) => row.date === state.dailySelected).sort((a, b) => Number(a.hour || 0) - Number(b.hour || 0));
+      const dayRows = dailyRows.map((row) => `
         <article class="row">
           <div class="row-grid" style="grid-template-columns: 60px 1fr 120px 120px;">
             <div><span class="chip">#${fmtInt(row.rank)}</span></div>
@@ -2257,44 +2473,178 @@ def build_dashboard_html(parsed: dict) -> str:
           </div>
         </article>
       `).join("");
+      root.innerHTML = `
+        <div class="range">選択日: ${escapeHtml(state.dailySelected.replaceAll("-", "/"))}</div>
+        ${dayRows || `<div class="empty">この日の上位スレッドはありません。</div>`}
+        <div class="note">時間帯別の詳細は下の折りたたみを開くと見られます。</div>
+      `;
+      details.hidden = false;
+      details.open = true;
+      const hourly = hourlyRows.length
+        ? hourlyRows.map((row) => `<div class="kv"><span>${String(row.hour).padStart(2, "0")}:00</span><strong>${fmtInt(row.user_messages)} 件</strong></div>`).join("")
+        : `<div class="empty">この日の時間帯データはありません。</div>`;
+      document.getElementById("dailyHourlyList").innerHTML = hourly;
     }
 
-    function renderCodexMatch() {
-      const panel = document.getElementById("codexPanel");
-      if (!CODEX || !CODEX.summary) {
-        panel.style.display = "none";
+    function renderDailyControls(rows) {
+      const select = document.getElementById("daySelect");
+      select.innerHTML = rows.map((row) => `<option value="${row.date}">${row.date.replaceAll("-", "/")}</option>`).join("");
+      state.dailySelected = state.dailySelected || rows[rows.length - 1]?.date || "";
+      select.value = state.dailySelected;
+      select.disabled = false;
+    }
+
+    function loadDailySection() {
+      if (state.dailyLoading || state.dailyLoaded) return;
+      state.dailyLoading = true;
+      setChip("dailyState", "読み込み中");
+      setStatus("dailyStatus", "日別詳細JSONを読み込んでいます...");
+      fetchJson(FILES.daily)
+        .then((data) => {
+          state.daily = data;
+          state.dailyLoaded = true;
+          state.dailyLoading = false;
+          const rows = (state.daily?.daily || []).slice();
+          renderDailyControls(rows);
+          renderDailyList();
+          renderDailyTopForSelectedDay();
+          setChip("dailyState", "読み込み済み");
+          setStatus("dailyStatus", `読み込み完了: ${fmtInt(rows.length)}日分`);
+        })
+        .catch((error) => {
+          state.dailyLoading = false;
+          setChip("dailyState", "読み込み失敗");
+          setStatus(
+            "dailyStatus",
+            `日別詳細の読み込みに失敗しました。ローカルHTTPサーバーで開いているか確認してください。${error.message}`,
+            "error",
+          );
+        });
+    }
+
+    function renderCategoriesSection() {
+      const rootMonthly = document.getElementById("categoryMonthlyList");
+      const rootDaily = document.getElementById("categoryDailyList");
+      const rootKeywords = document.getElementById("keywordsMonthlyList");
+      const categories = state.categories || {};
+      const monthlyRows = (categories.category_monthly || []).slice();
+      const dailyRows = (categories.category_daily || []).slice();
+      const keywordRows = (categories.keywords_monthly || []).slice();
+      rootMonthly.innerHTML = monthlyRows.length
+        ? monthlyRows.map((row) => `
+          <article class="row">
+            <div class="row-grid">
+              <div><span class="chip">${escapeHtml(monthToJp(row.month))}</span></div>
+              <div class="title">${escapeHtml(row.category || "その他")}</div>
+              <div class="num"><div class="label">会話数</div><div>${fmtInt(row.conversation_count)}</div></div>
+              <div class="num"><div class="label">あなたの発言</div><div>${fmtInt(row.user_message_count)}</div></div>
+              <div class="num"><div class="label">AI返答</div><div>${fmtInt(row.assistant_message_count)}</div></div>
+              <div class="num"><div class="label">合計</div><div>${fmtInt(row.total_message_count)}</div></div>
+            </div>
+          </article>
+        `).join("")
+        : `<div class="empty">カテゴリ月次データがありません。</div>`;
+      rootDaily.innerHTML = dailyRows.length
+        ? dailyRows.map((row) => `
+          <article class="row">
+            <div class="row-grid">
+              <div><span class="chip">${escapeHtml(row.date.replaceAll("-", "/"))}</span></div>
+              <div class="title">${escapeHtml(row.category || "その他")}</div>
+              <div class="num"><div class="label">会話数</div><div>${fmtInt(row.conversation_count)}</div></div>
+              <div class="num"><div class="label">あなたの発言</div><div>${fmtInt(row.user_message_count)}</div></div>
+              <div class="num"><div class="label">AI返答</div><div>${fmtInt(row.assistant_message_count)}</div></div>
+              <div class="num"><div class="label">合計</div><div>${fmtInt(row.total_message_count)}</div></div>
+            </div>
+          </article>
+        `).join("")
+        : `<div class="empty">カテゴリ日次データがありません。</div>`;
+      rootKeywords.innerHTML = keywordRows.length
+        ? keywordRows.map((row) => `
+          <article class="row">
+            <div class="row-grid" style="grid-template-columns: 110px 1fr 120px;">
+              <div><span class="chip">${escapeHtml(monthToJp(row.month))}</span></div>
+              <div class="title">${escapeHtml(row.keyword || "")}</div>
+              <div class="num"><div class="label">出現回数</div><div>${fmtInt(row.count)}</div></div>
+            </div>
+          </article>
+        `).join("")
+        : `<div class="empty">キーワードデータがありません。</div>`;
+    }
+
+    function loadCategoriesSection() {
+      if (state.categoriesLoading || state.categoriesLoaded) return;
+      state.categoriesLoading = true;
+      setChip("categoriesState", "読み込み中");
+      setStatus("categoriesStatus", "カテゴリ詳細JSONを読み込んでいます...");
+      fetchJson(FILES.categories)
+        .then((data) => {
+          state.categories = data;
+          state.categoriesLoaded = true;
+          state.categoriesLoading = false;
+          renderCategoriesSection();
+          setChip("categoriesState", "読み込み済み");
+          setStatus("categoriesStatus", "読み込み完了");
+        })
+        .catch((error) => {
+          state.categoriesLoading = false;
+          setChip("categoriesState", "読み込み失敗");
+          setStatus(
+            "categoriesStatus",
+            `カテゴリ詳細の読み込みに失敗しました。ローカルHTTPサーバーで開いているか確認してください。${error.message}`,
+            "error",
+          );
+        });
+    }
+
+    function renderPagedList(containerId, rows, stateKey, rowRenderer, pageSize, emptyMessage) {
+      const root = document.getElementById(containerId);
+      const visibleCount = state.codexVisibleCounts[stateKey] || pageSize;
+      const visibleRows = rows.slice(0, visibleCount);
+      if (!rows.length) {
+        root.innerHTML = `<div class="empty">${escapeHtml(emptyMessage)}</div>`;
         return;
       }
-      panel.style.display = "block";
-      const summary = CODEX.summary;
-      const april = MONTHLY.find((row) => row.month === "2026-04");
+      root.innerHTML = `
+        ${visibleRows.map(rowRenderer).join("")}
+        ${rows.length > visibleRows.length ? `<div class="more-wrap"><button type="button" data-more="${stateKey}">さらに表示</button></div>` : ""}
+      `;
+      const moreBtn = root.querySelector(`[data-more="${stateKey}"]`);
+      if (moreBtn) {
+        moreBtn.addEventListener("click", () => {
+          state.codexVisibleCounts[stateKey] = visibleCount + pageSize;
+          renderCodexSection();
+        });
+      }
+    }
+
+    function renderCodexSection() {
+      if (!state.codexLoaded || !state.codex) return;
+      const summary = state.codex.summary || {};
+      const meta = state.codex.meta || {};
+      const april = (state.summary?.monthly || []).find((row) => row.month === "2026-04");
       const chatgptThreadCount = april ? Number(april.conversations || 0) : null;
-      const codexSessionCount = Number(CODEX.meta?.rollout_file_count || 0);
-      const cards = [
+      const codexSessionCount = Number(meta.rollout_file_count || 0);
+      document.getElementById("codexSummaryCards").innerHTML = [
         ["ChatGPTスレッド数", chatgptThreadCount == null ? "-" : fmtInt(chatgptThreadCount)],
         ["Codexセッション数", fmtInt(codexSessionCount)],
-        ["合算スレッド数", chatgptThreadCount == null ? "-" : fmtInt(chatgptThreadCount + codexSessionCount)],
         ["ChatGPTでのあなたの入力数", fmtInt(summary.chat_codex_prompt_count || 0)],
         ["Codexでのあなたの入力数", fmtInt(summary.codex_user_prompt_count || 0)],
-        ["ChatGPT作成→Codex投入の一致数", fmtInt(summary.matched_prompt_count || 0)],
+        ["一致数", fmtInt(summary.matched_prompt_count || 0)],
         ["ChatGPT側だけにあるもの", fmtInt(summary.chat_only_prompt_count || 0)],
         ["Codex側だけにあるもの", fmtInt(summary.codex_only_prompt_count || 0)],
-      ];
-      document.getElementById("codexSummaryCards").innerHTML = cards
+      ]
         .map(([label, value]) => `<div class="card"><div class="label">${escapeHtml(label)}</div><div class="value">${escapeHtml(value)}</div></div>`)
         .join("");
 
-      function renderCodexRows(targetId, rows, typeName) {
-        const root = document.getElementById(targetId);
-        if (!rows || !rows.length) {
-          root.innerHTML = `<div class="empty">データがありません。</div>`;
-          return;
-        }
-        root.innerHTML = rows.slice(0, 200).map((row) => `
+      renderPagedList(
+        "codexMatchedList",
+        state.codex.matches || [],
+        "matched",
+        (row) => `
           <article class="row">
             <div class="row-grid">
               <div>${escapeHtml((row.date_jst || "").replaceAll("-", "/"))}</div>
-              <div><span class="chip">${escapeHtml(row.match_type || typeName)}</span></div>
+              <div><span class="chip">${escapeHtml(row.match_type || "matched")}</span></div>
               <div class="num">${escapeHtml(String(row.confidence ?? ""))}</div>
               <div>
                 <div>${escapeHtml(row.conversation_title || "")}</div>
@@ -2303,65 +2653,152 @@ def build_dashboard_html(parsed: dict) -> str:
               </div>
             </div>
           </article>
-        `).join("");
-      }
+        `,
+        30,
+        "一致データがありません。",
+      );
+      renderPagedList(
+        "codexChatOnlyList",
+        state.codex.unmatched_chat || [],
+        "chatOnly",
+        (row) => `
+          <article class="row">
+            <div class="row-grid">
+              <div>${escapeHtml((row.date_jst || "").replaceAll("-", "/"))}</div>
+              <div><span class="chip">chat_only</span></div>
+              <div class="num">${escapeHtml(String(row.confidence ?? ""))}</div>
+              <div>
+                <div>${escapeHtml(row.conversation_title || "")}</div>
+                <div class="muted">${escapeHtml((row.estimated_repo || "").slice(-96))}</div>
+                <div class="snippet">${escapeHtml(row.snippet || "")}</div>
+              </div>
+            </div>
+          </article>
+        `,
+        30,
+        "ChatGPT側だけのデータがありません。",
+      );
+      renderPagedList(
+        "codexOnlyList",
+        state.codex.unmatched_codex || [],
+        "codexOnly",
+        (row) => `
+          <article class="row">
+            <div class="row-grid">
+              <div>${escapeHtml((row.date_jst || "").replaceAll("-", "/"))}</div>
+              <div><span class="chip">codex_only</span></div>
+              <div class="num">${escapeHtml(String(row.confidence ?? ""))}</div>
+              <div>
+                <div>${escapeHtml(row.cwd_or_repo || "")}</div>
+                <div class="muted">${escapeHtml((row.rollout_path || "").slice(-96))}</div>
+                <div class="snippet">${escapeHtml(row.snippet || "")}</div>
+              </div>
+            </div>
+          </article>
+        `,
+        30,
+        "Codex側だけのデータがありません。",
+      );
+      setChip("codexState", "読み込み済み");
+      setStatus("codexStatus", `読み込み完了: 一致 ${fmtInt((state.codex.matches || []).length)} 件`);
+    }
 
-      renderCodexRows("codexMatchedList", CODEX.matches || [], "matched");
-      renderCodexRows("codexChatOnlyList", CODEX.unmatched_chat || [], "chat_only");
-      renderCodexRows("codexOnlyList", CODEX.unmatched_codex || [], "codex_only");
+    function loadCodexSection() {
+      if (state.codexLoading || state.codexLoaded) return;
+      state.codexLoading = true;
+      setChip("codexState", "読み込み中");
+      setStatus("codexStatus", "Codex照合JSONを読み込んでいます...");
+      fetchJson(FILES.codex)
+        .then((data) => {
+          state.codex = data;
+          state.codexLoaded = true;
+          state.codexLoading = false;
+          renderCodexSection();
+        })
+        .catch((error) => {
+          state.codexLoading = false;
+          setChip("codexState", "読み込み失敗");
+          setStatus(
+            "codexStatus",
+            `Codex照合の読み込みに失敗しました。ローカルHTTPサーバーで開いているか確認してください。${error.message}`,
+            "error",
+          );
+        });
     }
 
     function bindEvents() {
-      document.getElementById("detailToggle").addEventListener("change", (e) => {
-        state.developerMode = e.target.checked;
-        renderMonthlyList();
-        renderConversationList();
-      });
+      document.getElementById("loadConversationsBtn").addEventListener("click", loadConversationSection);
+      document.getElementById("loadDailyBtn").addEventListener("click", loadDailySection);
+      document.getElementById("loadCategoriesBtn").addEventListener("click", loadCategoriesSection);
+      document.getElementById("loadCodexBtn").addEventListener("click", loadCodexSection);
       document.getElementById("titleSearch").addEventListener("input", (e) => {
-        state.titleSearch = e.target.value || "";
+        state.conversationFilters.titleSearch = e.target.value || "";
+        state.conversationVisibleCount = 50;
         renderConversationList();
       });
       document.getElementById("monthFilter").addEventListener("change", (e) => {
-        state.monthFilter = e.target.value;
+        state.conversationFilters.monthFilter = e.target.value;
+        state.conversationVisibleCount = 50;
         renderConversationList();
       });
       document.getElementById("categoryFilter").addEventListener("change", (e) => {
-        state.categoryFilter = e.target.value;
+        state.conversationFilters.categoryFilter = e.target.value;
+        state.conversationVisibleCount = 50;
         renderConversationList();
       });
       document.getElementById("sortBy").addEventListener("change", (e) => {
-        state.sortBy = e.target.value;
+        state.conversationFilters.sortBy = e.target.value;
+        state.conversationVisibleCount = 50;
         renderConversationList();
       });
       document.getElementById("daySelect").addEventListener("change", (e) => {
-        state.selectedDay = e.target.value;
-        renderDailyTop();
+        state.dailySelected = e.target.value;
+        renderDailyTopForSelectedDay();
       });
     }
 
-    function render() {
-      renderHeader();
-      renderSummaryCards();
-      renderAprilCards();
-      renderMonthlyList();
-      setupFilters();
-      setupDailySelect();
-      renderConversationList();
-      renderDailyTop();
-      renderCodexMatch();
+    async function init() {
       bindEvents();
+      try {
+        const summary = await fetchJson(FILES.summary);
+        state.summary = summary;
+        renderMeta(summary);
+        renderSummaryCards(summary);
+        renderMonthlyList(summary);
+        setStatus("summaryStatus", `サマリーを読み込みました。月別 ${fmtInt((summary.monthly || []).length)} 件。`);
+      } catch (error) {
+        setStatus(
+          "summaryStatus",
+          `サマリーの読み込みに失敗しました。ローカルHTTPサーバーで開いているか確認してください。${error.message}`,
+          "error",
+        );
+        setChip("summaryPhase", "読み込み失敗");
+        return;
+      }
+      setConversationControlsEnabled(false);
+      document.getElementById("conversationList").innerHTML = `<div class="empty">会話一覧はボタンを押したときだけ読み込みます。</div>`;
+      document.getElementById("dailyList").innerHTML = `<div class="empty">日別詳細はボタンを押したときだけ読み込みます。</div>`;
+      document.getElementById("categoryMonthlyList").innerHTML = `<div class="empty">カテゴリ詳細はボタンを押したときだけ読み込みます。</div>`;
+      document.getElementById("keywordsMonthlyList").innerHTML = `<div class="empty">キーワード詳細はボタンを押したときだけ読み込みます。</div>`;
+      document.getElementById("codexSummaryCards").innerHTML = `<div class="empty">Codex照合はボタンを押したときだけ読み込みます。</div>`;
+      document.getElementById("codexMatchedList").innerHTML = `<div class="empty">Codex照合はボタンを押したときだけ読み込みます。</div>`;
+      document.getElementById("codexChatOnlyList").innerHTML = "";
+      document.getElementById("codexOnlyList").innerHTML = "";
+      setStatus("conversationStatus", "未読み込み");
+      setStatus("dailyStatus", "未読み込み");
+      setStatus("categoriesStatus", "未読み込み");
+      setStatus("codexStatus", "未読み込み");
     }
 
-    render();
+    init();
   </script>
 </body>
 </html>
 """
-    return template.replace("__PAYLOAD__", payload)
 
 
-def write_dashboard_html(path: Path, parsed: dict) -> None:
-    path.write_text(build_dashboard_html(parsed), encoding="utf-8")
+def write_dashboard_html(path: Path) -> None:
+    path.write_text(build_dashboard_html(), encoding="utf-8")
 
 
 def load_parsed(path: Path) -> dict:
@@ -2508,8 +2945,13 @@ def write_outputs(output_dir: Path, parsed: dict) -> None:
     (output_dir / "parsed_summary.json").write_text(
         json.dumps(parsed, ensure_ascii=False, indent=2), encoding="utf-8"
     )
+    _write_json(output_dir / "dashboard_summary.json", build_dashboard_summary_payload(parsed))
+    _write_json(output_dir / "dashboard_conversations.json", build_dashboard_conversations_payload(parsed))
+    _write_json(output_dir / "dashboard_daily.json", build_dashboard_daily_payload(parsed))
+    _write_json(output_dir / "dashboard_categories.json", build_dashboard_categories_payload(parsed))
+    _write_json(output_dir / "dashboard_codex_match.json", build_dashboard_codex_payload(parsed))
     write_monthly_summary_md(output_dir / "monthly_summary.md", parsed)
-    write_dashboard_html(output_dir / "dashboard.html", parsed)
+    write_dashboard_html(output_dir / "dashboard.html")
     write_codex_match_outputs(output_dir, parsed.get("codex_match"))
 
 

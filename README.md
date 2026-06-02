@@ -1,43 +1,52 @@
-# ChatGPT エクスポート分析ツール
+# ChatGPT エクスポート解析ツール
 
-このリポジトリは、ChatGPT エクスポート（`conversations.json` / `conversations-*.json` / `chat.html`）をローカルで再解析し、ダッシュボードとCSVを生成するためのものです。
+このリポジトリは、ChatGPT エクスポートと Codex ローカルログを解析して、ローカルで確認できる集計ファイルを作るためのものです。
 
 ## 安全ポリシー
 
-- 生のChatGPTエクスポートはGitにコミットしません。
-- 生成物（`parsed_summary.json` / `dashboard.html` / `*.csv` など）も原則コミットしません。
-- `.gitignore` の方針を維持してください。
+- 生の ChatGPT エクスポートは Git にコミットしません。
+- 解析で生成される大きな成果物も、原則 Git 管理対象にしません。
+- 参照するのはソースコードと `docs/` の説明です。
 
-## 新しいエクスポート追加手順（Windows）
+## 使い方
 
-1. エクスポートファイルをリポジトリ直下（`C:\33_chatgpt_chat_view`）に置きます。  
-   対象は `conversations.json` または `conversations-*.json` または `chat.html` です。
-2. 基本運用は「既存ファイル置き換え」です。  
-   以前の `conversations.json` や `chat.html` を新しいものに入れ替えて再実行してください。
-3. `conversations-*.json` を複数置く場合は、重複会話・重複メッセージが混ざる可能性があります。  
-   本ツールは `conversation_id` と `message.id`（欠損時はフォールバック署名）で重複排除して二重集計を防ぎます。
-4. 解析を実行します。
+1. 解析したいエクスポートをリポジトリ直下に置きます。
+   - `chat.html`
+   - `conversations.json`
+   - `conversations-*.json`
+2. 解析を実行します。
 
 ```powershell
 python .\analyze_chat_export.py --input-dir . --output-dir . --timezone Asia/Tokyo --rebuild
 ```
 
-5. `dashboard.html` をブラウザで開いて確認します。
+3. `dashboard.html` は `fetch()` で JSON を読むため、ローカルHTTPサーバー経由で開きます。
 
 ```powershell
-start .\dashboard.html
+python -m http.server 8733
 ```
 
-## 入力ファイル優先順
+4. ブラウザで次を開きます。
 
-1. `conversations-*.json`（複数）
-2. `conversations.json`
-3. `chat.html`
+```text
+http://localhost:8733/dashboard.html
+```
 
-## 生成される主なファイル
+## 生成ファイル
+
+### ダッシュボード
+
+- `dashboard.html`
+- `dashboard_summary.json`
+- `dashboard_conversations.json`
+- `dashboard_daily.json`
+- `dashboard_categories.json`
+- `dashboard_codex_match.json`
+
+### 既存の集計
 
 - `parsed_summary.json`
-- `dashboard.html`
+- `monthly_summary.md`
 - `conversations_index.csv`
 - `category_monthly.csv`
 - `category_daily.csv`
@@ -48,58 +57,24 @@ start .\dashboard.html
 - `daily_user_messages.csv`
 - `daily_hourly_user_messages.csv`
 - `daily_conversations.csv`
-- `monthly_summary.md`
+- `out/`
 
-## 重複排除仕様
+## どのファイルを見るか
 
-- 優先キー: `conversation_id + message.id`
-- `message.id` がない場合: `conversation_id + hash(role,timestamp,text,recipient)` を使用
-- 同一キーは1回のみ集計します。
-- これにより `conversations-*.json` の複数入力時でも数値が膨らまないようにしています。
+- まず見るのは `dashboard.html` です。
+- 全体サマリーだけ見たいときは `dashboard_summary.json` が元データです。
+- 会話一覧を見たいときは `dashboard_conversations.json` を `dashboard.html` から読み込みます。
+- 日別詳細は `dashboard_daily.json`、カテゴリとキーワードは `dashboard_categories.json`、Codex 照合は `dashboard_codex_match.json` です。
+- `parsed_summary.json` と CSV 群は互換用の集計結果なので、通常は直接見る必要はありません。
 
-## カテゴリ分類ルール
+## 補足
 
-- ルールファイル: `rules/category_keywords.json`
-- 会話ごとにキーワード辞書方式で `inferred_category` を付与します。
-- ルールを編集した場合は `--rebuild` で再解析してください。
+- 生成ファイルは `.gitignore` で除外しています。
+- ローカルHTTPサーバーで開かずに `dashboard.html` を直接開くと、JSON の読み込みに失敗することがあります。
+- 詳しい読み方は [`docs/dashboard_guide.md`](/C:/33_chatgpt_chat_view/docs/dashboard_guide.md) を参照してください。
 
-## 月別指標
-
-- `avg_per_elapsed_day`: `user_messages / その月の経過日数`
-- `avg_per_active_day`: `user_messages / active_days`
-- `median_daily_user_messages`: その月の日別 `user_messages` の中央値
-- `peak_daily_user_messages`: その月で最も user メッセージ数が多かった日の件数
-- `peak_daily_date`: その日付
-
-経過日数は、過去月は月末日まで、進行中の月はデータが存在する最終日までを使用します。
-
-## ダッシュボードでできること
-
-- 会話一覧テーブルの表示
-- タイトル検索
-- 年月フィルタ
-- カテゴリフィルタ
-- メッセージ数順 / 最終更新日順のソート
-- 日別の上位会話から対象会話へジャンプ
-
-## サンプルデータでの検証
-
-- ダミーサンプル: `tests/fixtures/conversations.sample.json`
-- 重複会話・重複 `message.id`・`message.id` なし重複ケースを含みます。
-- テスト実行:
+## テスト
 
 ```powershell
 python -m unittest tests.test_analyze_chat_export
 ```
-
-## Token estimate notes
-- `*_tokens_est` values are local estimates from exported message body text.
-- These estimates are **not** API billing tokens and must not be used for charge reconciliation.
-- If `tiktoken` is available, tokenizer `o200k_base` is used.
-- If `tiktoken` is unavailable, a character-count based fallback estimate is used.
-
-## Dashboard guide
-- See `docs/dashboard_guide.md` for UI reading order and term definitions.
-
-
-<!-- chatgpt-index-refresh: 2026-05-05 -->
