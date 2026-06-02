@@ -148,6 +148,9 @@ class AnalyzeChatExportTest(unittest.TestCase):
             daily_payload = json.loads((output_dir / "dashboard_daily.json").read_text(encoding="utf-8"))
             self.assertIn("daily", daily_payload)
             self.assertIn("daily_top_conversations", daily_payload)
+            for row in daily_payload["daily"]:
+                self.assertIn("total_tokens_est", row)
+                self.assertGreaterEqual(row["total_tokens_est"], 0)
 
             categories_payload = json.loads((output_dir / "dashboard_categories.json").read_text(encoding="utf-8"))
             self.assertIn("category_monthly", categories_payload)
@@ -161,6 +164,7 @@ class AnalyzeChatExportTest(unittest.TestCase):
             self.assertIn("dashboard_summary.json", dashboard_html)
             self.assertIn("会話一覧を読み込む", dashboard_html)
             self.assertIn("Codex照合を読み込む", dashboard_html)
+            self.assertIn("月内の日別一覧", dashboard_html)
             self.assertNotIn('<script id="data" type="application/json">', dashboard_html)
 
     def test_codex_match_filters_agents_injection(self) -> None:

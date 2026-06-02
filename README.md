@@ -63,15 +63,17 @@ http://localhost:8733/dashboard.html
 
 - まず見るのは `dashboard.html` です。
 - 全体サマリーだけ見たいときは `dashboard_summary.json` が元データです。
+- 月別サマリーの「詳細」を開くと、その月の1日ごとの会話数一覧が見えます。
+- 日別一覧を見るだけなら日付選択は不要です。
 - 会話一覧を見たいときは `dashboard_conversations.json` を `dashboard.html` から読み込みます。
-- 日別詳細は `dashboard_daily.json`、カテゴリとキーワードは `dashboard_categories.json`、Codex 照合は `dashboard_codex_match.json` です。
+- 日別の掘り下げは `dashboard_daily.json`、カテゴリとキーワードは `dashboard_categories.json`、Codex 照合は `dashboard_codex_match.json` です。
 - `parsed_summary.json` と CSV 群は互換用の集計結果なので、通常は直接見る必要はありません。
 
 ## 補足
 
 - 生成ファイルは `.gitignore` で除外しています。
 - ローカルHTTPサーバーで開かずに `dashboard.html` を直接開くと、JSON の読み込みに失敗することがあります。
-- 詳しい読み方は [`docs/dashboard_guide.md`](/C:/33_chatgpt_chat_view/docs/dashboard_guide.md) を参照してください。
+- 詳しい読み方は [`docs/dashboard_guide.md`](docs/dashboard_guide.md) を参照してください。
 
 ## テスト
 

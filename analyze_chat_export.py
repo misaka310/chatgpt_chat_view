@@ -1182,6 +1182,7 @@ def collect_stats_from_inputs(paths: Iterable[Path], marker: Optional[str], loca
     monthly_active_days: Dict[str, set[str]] = defaultdict(set)
     daily_user: Counter[str] = Counter()
     daily_conv_ids: Dict[str, set[str]] = defaultdict(set)
+    daily_tokens: Counter[str] = Counter()
     daily_hourly: Counter[tuple[str, int]] = Counter()
     monthly_weekday_hour: Counter[tuple[str, int, int]] = Counter()
     daily_conv_user_counts: Dict[str, Counter[str]] = defaultdict(Counter)
@@ -1283,6 +1284,7 @@ def collect_stats_from_inputs(paths: Iterable[Path], marker: Optional[str], loca
                 day = dt.strftime("%Y-%m-%d")
                 hour = dt.hour
                 weekday = dt.weekday()
+                daily_tokens[day] += int(token_est)
 
                 first_ts = stats["first_ts"]
                 last_ts = stats["last_ts"]
@@ -1409,6 +1411,7 @@ def collect_stats_from_inputs(paths: Iterable[Path], marker: Optional[str], loca
             "weekday": datetime.strptime(day, "%Y-%m-%d").weekday(),
             "user_messages": int(daily_user[day]),
             "conversations": int(len(daily_conv_ids.get(day, set()))),
+            "total_tokens_est": int(daily_tokens.get(day, 0)),
         }
         for day in days
     ]
@@ -1971,6 +1974,30 @@ def build_dashboard_html() -> str:
     .chip { display: inline-block; border-radius: 999px; border: 1px solid #bdd1f5; background: var(--soft); color: #1d4fa6; padding: 2px 8px; font-size: 0.75rem; white-space: nowrap; }
     .kv { display: flex; justify-content: space-between; gap: 10px; font-size: 0.86rem; border-bottom: 1px dotted var(--line); padding: 3px 0; }
     .kv:last-child { border-bottom: 0; }
+    .month-daily-section { margin-top: 12px; padding-top: 10px; border-top: 1px dashed var(--line); }
+    .month-daily-title { font-size: 0.86rem; font-weight: 700; color: var(--ink); margin-bottom: 4px; }
+    .month-daily-status { font-size: 0.84rem; color: var(--muted); margin: 4px 0 8px; }
+    .month-daily-table { display: grid; gap: 4px; }
+    .month-daily-head, .month-daily-row {
+      display: grid;
+      grid-template-columns: 110px 90px 120px 140px;
+      gap: 8px;
+      align-items: center;
+    }
+    .month-daily-head {
+      font-size: 0.78rem;
+      color: var(--muted);
+      font-weight: 700;
+      padding: 4px 0 6px;
+      border-bottom: 1px solid var(--line);
+    }
+    .month-daily-row {
+      padding: 4px 0;
+      border-bottom: 1px dotted var(--line);
+      font-size: 0.9rem;
+    }
+    .month-daily-row:last-child { border-bottom: 0; }
+    .month-daily-empty { font-size: 0.86rem; color: var(--muted); padding: 6px 0; }
     .filters { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; margin-top: 8px; margin-bottom: 6px; }
     label { display: block; font-size: 0.8rem; color: var(--muted); margin-bottom: 4px; }
     input, select {
@@ -1996,6 +2023,7 @@ def build_dashboard_html() -> str:
       .row-grid { grid-template-columns: 1fr 1fr; }
       .num { text-align: left; }
       .codex-list .row-grid { grid-template-columns: 1fr; }
+      .month-daily-head, .month-daily-row { grid-template-columns: 1fr 1fr; }
     }
   </style>
 </head>
@@ -2147,6 +2175,8 @@ def build_dashboard_html() -> str:
       summary: null,
       conversations: null,
       daily: null,
+      dailyByMonth: null,
+      dailyPromise: null,
       categories: null,
       codex: null,
       conversationFilters: {
@@ -2294,9 +2324,20 @@ def build_dashboard_html() -> str:
             <div class="kv"><span>1発言あたり入力トークン</span><strong>${fmtDec(row.avg_user_tokens_est)}</strong></div>
             <div class="kv"><span>1日あたり推定トークン</span><strong>${fmtDec(row.avg_tokens_per_active_day_est)}</strong></div>
             <div class="kv"><span>最大日の日付</span><strong>${escapeHtml((row.peak_daily_date || "").replaceAll("-", "/"))}</strong></div>
+            <div class="month-daily-section" data-month-daily-section="${escapeHtml(row.month)}">
+              <div class="month-daily-title">月内の日別一覧</div>
+              <div class="month-daily-status" data-month-daily-status>詳細を開くとこの月の日別一覧を読み込みます。</div>
+              <div class="month-daily-table" data-month-daily-table></div>
+            </div>
           </details>
         </article>
       `).join("");
+      root.querySelectorAll("details[data-month]").forEach((details) => {
+        details.addEventListener("toggle", () => {
+          if (!details.open) return;
+          loadMonthDailyForDetails(details);
+        });
+      });
     }
 
     function setConversationControlsEnabled(enabled) {
@@ -2432,6 +2473,91 @@ def build_dashboard_html() -> str:
         });
     }
 
+    function groupDailyRowsByMonth(rows) {
+      const grouped = new Map();
+      for (const row of rows) {
+        const month = row.month || "";
+        if (!grouped.has(month)) grouped.set(month, []);
+        grouped.get(month).push(row);
+      }
+      return grouped;
+    }
+
+    async function ensureDailyDataLoaded() {
+      if (state.dailyLoaded) return state.daily;
+      if (state.dailyPromise) return state.dailyPromise;
+      state.dailyPromise = fetchJson(FILES.daily)
+        .then((data) => {
+          state.daily = data;
+          state.dailyByMonth = groupDailyRowsByMonth(data.daily || []);
+          state.dailyLoaded = true;
+          return data;
+        })
+        .finally(() => {
+          state.dailyPromise = null;
+        });
+      return state.dailyPromise;
+    }
+
+    function renderMonthDailyForDetails(details) {
+      const month = details?.dataset?.month || "";
+      const statusEl = details?.querySelector("[data-month-daily-status]");
+      const tableEl = details?.querySelector("[data-month-daily-table]");
+      if (!statusEl || !tableEl || !month) return;
+      const rows = (state.dailyByMonth?.get(month) || []).slice().sort((a, b) => String(a.date).localeCompare(String(b.date)));
+      if (!rows.length) {
+        statusEl.className = "month-daily-status";
+        statusEl.textContent = "この月の日別データはありません。";
+        tableEl.innerHTML = `<div class="month-daily-empty">この月の日別一覧はありません。</div>`;
+        return;
+      }
+      statusEl.className = "month-daily-status";
+      statusEl.textContent = `${rows.length}日分`;
+      tableEl.innerHTML = `
+        <div class="month-daily-head">
+          <div>日付</div>
+          <div>会話数</div>
+          <div>あなたの発言数</div>
+          <div>推定総トークン</div>
+        </div>
+        ${rows.map((row) => `
+          <div class="month-daily-row">
+            <div>${escapeHtml(String(row.date || "").replaceAll("-", "/"))}</div>
+            <div class="num">${fmtInt(row.conversations)}</div>
+            <div class="num">${fmtInt(row.user_messages)}</div>
+            <div class="num">${fmtInt(row.total_tokens_est)} tok</div>
+          </div>
+        `).join("")}
+      `;
+    }
+
+    function renderOpenMonthlyDailySections() {
+      document.querySelectorAll("details[data-month][open]").forEach((details) => {
+        renderMonthDailyForDetails(details);
+      });
+    }
+
+    function loadMonthDailyForDetails(details) {
+      const statusEl = details?.querySelector("[data-month-daily-status]");
+      const tableEl = details?.querySelector("[data-month-daily-table]");
+      if (!statusEl || !tableEl) return;
+      if (state.dailyLoaded) {
+        renderMonthDailyForDetails(details);
+        return;
+      }
+      statusEl.className = "month-daily-status";
+      statusEl.textContent = "月内の日別一覧を読み込み中...";
+      tableEl.innerHTML = "";
+      ensureDailyDataLoaded()
+        .then(() => {
+          renderOpenMonthlyDailySections();
+        })
+        .catch((error) => {
+          statusEl.className = "month-daily-status error";
+          statusEl.textContent = `月内の日別一覧の読み込みに失敗しました。ローカルHTTPサーバーで開いているか確認してください。${error.message}`;
+        });
+    }
+
     function renderDailyList() {
       const root = document.getElementById("dailyList");
       if (!state.dailyLoaded) {
@@ -2446,7 +2572,7 @@ def build_dashboard_html() -> str:
             <div></div>
             <div class="num"><div class="label">あなたの発言数</div><div>${fmtInt(row.user_messages)}</div></div>
             <div class="num"><div class="label">会話数</div><div>${fmtInt(row.conversations)}</div></div>
-            <div></div>
+            <div class="num"><div class="label">推定総トークン</div><div>${fmtInt(row.total_tokens_est)} tok</div></div>
             <div><span class="chip">${escapeHtml(monthToJp(row.month))}</span></div>
           </div>
         </article>
@@ -2488,6 +2614,12 @@ def build_dashboard_html() -> str:
 
     function renderDailyControls(rows) {
       const select = document.getElementById("daySelect");
+      if (!rows.length) {
+        select.innerHTML = `<option value="">データなし</option>`;
+        state.dailySelected = "";
+        select.disabled = true;
+        return;
+      }
       select.innerHTML = rows.map((row) => `<option value="${row.date}">${row.date.replaceAll("-", "/")}</option>`).join("");
       state.dailySelected = state.dailySelected || rows[rows.length - 1]?.date || "";
       select.value = state.dailySelected;
@@ -2499,15 +2631,14 @@ def build_dashboard_html() -> str:
       state.dailyLoading = true;
       setChip("dailyState", "読み込み中");
       setStatus("dailyStatus", "日別詳細JSONを読み込んでいます...");
-      fetchJson(FILES.daily)
+      ensureDailyDataLoaded()
         .then((data) => {
-          state.daily = data;
-          state.dailyLoaded = true;
           state.dailyLoading = false;
           const rows = (state.daily?.daily || []).slice();
           renderDailyControls(rows);
           renderDailyList();
           renderDailyTopForSelectedDay();
+          renderOpenMonthlyDailySections();
           setChip("dailyState", "読み込み済み");
           setStatus("dailyStatus", `読み込み完了: ${fmtInt(rows.length)}日分`);
         })
