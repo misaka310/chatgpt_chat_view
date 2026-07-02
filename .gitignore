@@ -1,4 +1,4 @@
-﻿# Python cache
+# Python cache
 __pycache__/
 *.py[cod]
 
@@ -21,4 +21,9 @@ dashboard_daily.json
 dashboard_categories.json
 dashboard_codex_match.json
 monthly_summary.md
+gpt_3h_limit_summary.md
+gpt_3h_limit_summary.json
+gpt_3h_limit_monthly.csv
+gpt_3h_limit_daily.csv
+gpt_3h_limit_windows.csv
 out/
