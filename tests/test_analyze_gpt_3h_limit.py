@@ -84,12 +84,18 @@ class AnalyzeGpt3hLimitTest(unittest.TestCase):
             self.assertEqual(summary["over_threshold_by"], 1)
 
             for filename in (
+                "gpt_3h_limit.html",
                 "gpt_3h_limit_summary.md",
                 "gpt_3h_limit_monthly.csv",
                 "gpt_3h_limit_daily.csv",
                 "gpt_3h_limit_windows.csv",
             ):
                 self.assertTrue((output_dir / filename).exists(), f"{filename} was not generated")
+
+            html = (output_dir / "gpt_3h_limit.html").read_text(encoding="utf-8")
+            self.assertIn("GPT 3時間160送信チェック", html)
+            self.assertIn("超過あり", html)
+            self.assertIn("161", html)
 
             with (output_dir / "gpt_3h_limit_daily.csv").open("r", encoding="utf-8", newline="") as f:
                 daily_rows = list(csv.DictReader(f))
@@ -152,6 +158,11 @@ class AnalyzeGpt3hLimitTest(unittest.TestCase):
             self.assertTrue(summary["reached_threshold"])
             self.assertFalse(summary["exceeded_threshold"])
             self.assertEqual(summary["over_threshold_by"], 0)
+
+            html = (output_dir / "gpt_3h_limit.html").read_text(encoding="utf-8")
+            self.assertIn("GPT 3時間160送信チェック", html)
+            self.assertIn("超過なし", html)
+            self.assertIn("160", html)
 
 
 if __name__ == "__main__":
