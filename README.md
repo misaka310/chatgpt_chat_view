@@ -38,11 +38,17 @@ python -m http.server 8733
 http://localhost:8733/dashboard.html
 ```
 
+3時間160送信チェックの画面は次です。
+
+```text
+http://localhost:8733/gpt_3h_limit.html
+```
+
 ## 3時間160送信チェック
 
 `analyze_gpt_3h_limit.py` は、ChatGPTエクスポート内の `author.role == user` の送信時刻を並べ、任意の連続3時間に160送信へ到達・超過した候補があるかを集計します。
 
-見るべきファイルは `gpt_3h_limit_summary.md` です。JSONで見たい場合は `gpt_3h_limit_summary.json` を見ます。
+まず見るべきファイルは `gpt_3h_limit.html` です。Markdownで見たい場合は `gpt_3h_limit_summary.md`、JSONで見たい場合は `gpt_3h_limit_summary.json` を見ます。
 
 注意点:
 
@@ -65,6 +71,7 @@ http://localhost:8733/dashboard.html
 
 ### 3時間160送信チェック
 
+- `gpt_3h_limit.html`
 - `gpt_3h_limit_summary.md`
 - `gpt_3h_limit_summary.json`
 - `gpt_3h_limit_monthly.csv`
@@ -90,7 +97,7 @@ http://localhost:8733/dashboard.html
 ## どのファイルを見るか
 
 - まず見るのは `dashboard.html` です。
-- 3時間160送信の到達・超過候補は `gpt_3h_limit_summary.md` です。
+- 3時間160送信の到達・超過候補は `gpt_3h_limit.html` です。
 - 全体サマリーだけ見たいときは `dashboard_summary.json` が元データです。
 - `dashboard.html` は、月ごとの送信回数の推移、選択月サマリー、月別一覧、選択月の日別送信回数を中心に表示します。表示内容は `analyze_chat_export.py` と `dashboard.template.html` から再生成されます。
 - 月別一覧で月を選ぶと、その月のサマリーと日別推移が連動します。
