@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import html
 import json
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
@@ -28,7 +29,7 @@ def iso_local(dt: datetime) -> str:
     return dt.strftime("%Y-%m-%d %H:%M:%S")
 
 
-def collect_user_message_events(paths: Iterable[Path], marker: Optional[str], local_tz) -> list[dict]:
+def collect_user_message_events(paths: Iterable[Path], marker: Optional[str], local_tz) -> tuple[list[dict], dict]:
     events: list[dict] = []
     seen_message_keys: set[str] = set()
     total_conversation_objects = 0
@@ -117,7 +118,14 @@ def empty_peak_row(key: str = "") -> dict:
     }
 
 
-def build_peak_row(period: str, count: int, start_dt: datetime, end_dt: datetime, actual_last_dt: datetime, threshold: int) -> dict:
+def build_peak_row(
+    period: str,
+    count: int,
+    start_dt: datetime,
+    end_dt: datetime,
+    actual_last_dt: datetime,
+    threshold: int,
+) -> dict:
     return {
         "period": period,
         "max_3h_user_messages": int(count),
@@ -137,7 +145,6 @@ def maybe_replace_peak(current: Optional[dict], candidate: dict) -> dict:
         return candidate
     if candidate["max_3h_user_messages"] < current["max_3h_user_messages"]:
         return current
-    # Tie-breaker: keep the earliest peak window.
     if candidate.get("peak_window_start_jst", "") < current.get("peak_window_start_jst", ""):
         return candidate
     return current
@@ -263,6 +270,10 @@ def write_json(path: Path, data: Any) -> None:
     path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
+def yes_no(value: bool) -> str:
+    return "yes" if value else "no"
+
+
 def write_markdown_summary(path: Path, report: dict) -> None:
     summary = report["summary"]
     lines = [
@@ -271,8 +282,8 @@ def write_markdown_summary(path: Path, report: dict) -> None:
         "## 結論",
         f"- 連続{summary['window_hours']:g}時間の最大送信数: {summary['max_3h_user_messages']}",
         f"- 閾値: {summary['threshold_user_messages']} user messages / {summary['window_hours']:g}h",
-        f"- 閾値到達: {'yes' if summary['reached_threshold'] else 'no'}",
-        f"- 閾値超過: {'yes' if summary['exceeded_threshold'] else 'no'}",
+        f"- 閾値到達: {yes_no(summary['reached_threshold'])}",
+        f"- 閾値超過: {yes_no(summary['exceeded_threshold'])}",
         f"- 超過幅: {summary['over_threshold_by']}",
         f"- ピーク窓: {summary['peak_window_start_jst']} ~ {summary['peak_window_end_jst']}",
         f"- 実際の最後の送信: {summary['peak_actual_last_message_jst']}",
@@ -283,6 +294,7 @@ def write_markdown_summary(path: Path, report: dict) -> None:
         "- そのため、公式制限の確定判定ではなく、160/3hに達した可能性を見るための候補レポートです。",
         "",
         "## 出力",
+        "- `gpt_3h_limit.html`",
         "- `gpt_3h_limit_summary.json`",
         "- `gpt_3h_limit_monthly.csv`",
         "- `gpt_3h_limit_daily.csv`",
@@ -290,6 +302,100 @@ def write_markdown_summary(path: Path, report: dict) -> None:
         "",
     ]
     path.write_text("\n".join(lines), encoding="utf-8")
+
+
+def esc(value: Any) -> str:
+    return html.escape(str(value if value is not None else ""), quote=True)
+
+
+def build_html_report(report: dict) -> str:
+    summary = report["summary"]
+    daily_rows = report.get("daily", [])
+    monthly_rows = report.get("monthly", [])
+    windows = report.get("threshold_windows", [])[:50]
+    status_text = "超過あり" if summary["exceeded_threshold"] else "超過なし"
+    reached_text = "到達あり" if summary["reached_threshold"] else "到達なし"
+    card_rows = [
+        ("連続3時間の最大送信数", summary["max_3h_user_messages"], "user messages"),
+        ("閾値", summary["threshold_user_messages"], f"/ {summary['window_hours']:g}h"),
+        ("判定", status_text, reached_text),
+        ("ピーク窓", summary["peak_window_start_jst"], f"〜 {summary['peak_window_end_jst']}"),
+    ]
+    cards_html = "\n".join(
+        f'<div class="card"><div class="label">{esc(label)}</div><div class="value">{esc(value)}</div><div class="unit">{esc(unit)}</div></div>'
+        for label, value, unit in card_rows
+    )
+    monthly_html = "\n".join(
+        f"<tr><td>{esc(row.get('month'))}</td><td class='num'>{esc(row.get('max_3h_user_messages'))}</td><td>{esc(row.get('reached_threshold'))}</td><td>{esc(row.get('exceeded_threshold'))}</td><td>{esc(row.get('peak_window_start_jst'))}</td></tr>"
+        for row in monthly_rows
+    ) or "<tr><td colspan='5'>データなし</td></tr>"
+    top_daily = sorted(daily_rows, key=lambda r: (-int(r.get("max_3h_user_messages", 0)), str(r.get("date", ""))))[:30]
+    daily_html = "\n".join(
+        f"<tr><td>{esc(row.get('date'))}</td><td class='num'>{esc(row.get('max_3h_user_messages'))}</td><td>{esc(row.get('reached_threshold'))}</td><td>{esc(row.get('exceeded_threshold'))}</td><td>{esc(row.get('peak_window_start_jst'))}</td></tr>"
+        for row in top_daily
+    ) or "<tr><td colspan='5'>データなし</td></tr>"
+    windows_html = "\n".join(
+        f"<tr><td>{esc(row.get('window_start_jst'))}</td><td>{esc(row.get('window_end_jst'))}</td><td class='num'>{esc(row.get('user_messages_in_3h'))}</td><td>{esc(row.get('exceeded_threshold'))}</td><td>{esc(row.get('conversation_title_at_start'))}</td></tr>"
+        for row in windows
+    ) or "<tr><td colspan='5'>160到達ウィンドウなし</td></tr>"
+    return f"""<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>GPT 3時間160送信チェック</title>
+  <style>
+    body {{ margin: 0; background: #f4f7fb; color: #1d2733; font-family: "Segoe UI", "Yu Gothic UI", "Meiryo", sans-serif; line-height: 1.5; }}
+    .wrap {{ max-width: 1160px; margin: 0 auto; padding: 20px 16px 40px; display: grid; gap: 16px; }}
+    .panel {{ background: #fff; border: 1px solid #d8e0ea; border-radius: 14px; padding: 16px; box-shadow: 0 4px 18px rgba(25,45,65,0.06); }}
+    h1, h2 {{ margin: 0 0 8px; }}
+    h1 {{ font-size: 1.45rem; }}
+    h2 {{ font-size: 1.08rem; }}
+    .sub, .unit, .label {{ color: #5d6b7c; }}
+    .cards {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 10px; }}
+    .card {{ border: 1px solid #d8e0ea; border-radius: 12px; padding: 12px; background: linear-gradient(180deg, #fff, #f9fcff); }}
+    .value {{ margin-top: 4px; font-size: 1.25rem; font-weight: 700; }}
+    .notice {{ border-left: 4px solid #f2b07d; background: #fff2e8; padding: 8px 10px; border-radius: 8px; color: #7c4a21; font-size: 0.9rem; }}
+    table {{ width: 100%; border-collapse: collapse; font-size: 0.92rem; }}
+    th, td {{ border-bottom: 1px solid #d8e0ea; padding: 7px 8px; text-align: left; vertical-align: top; }}
+    th {{ color: #5d6b7c; font-weight: 700; }}
+    .num {{ text-align: right; font-variant-numeric: tabular-nums; }}
+    .ok {{ display: inline-block; border-radius: 999px; background: #e9f7ef; color: #166534; padding: 3px 10px; font-weight: 700; }}
+    .bad {{ display: inline-block; border-radius: 999px; background: #fde8e8; color: #8b1d1d; padding: 3px 10px; font-weight: 700; }}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <section class="panel">
+      <h1>GPT 3時間160送信チェック</h1>
+      <div class="sub">ChatGPTエクスポートから、任意の連続3時間で160送信に到達・超過した候補を確認します。</div>
+      <p>{'<span class="bad">超過あり</span>' if summary['exceeded_threshold'] else '<span class="ok">超過なし</span>'}</p>
+    </section>
+    <section class="panel"><div class="cards">{cards_html}</div></section>
+    <section class="panel">
+      <h2>注意</h2>
+      <div class="notice">これは公式のモデル別利用量ではありません。ChatGPTエクスポート上のユーザー送信を数えるため、GPT-5.5以外、Thinking、添付、ツール利用などが混ざる可能性があります。</div>
+    </section>
+    <section class="panel">
+      <h2>月別ピーク</h2>
+      <table><thead><tr><th>月</th><th>最大3時間送信数</th><th>160到達</th><th>160超過</th><th>ピーク開始</th></tr></thead><tbody>{monthly_html}</tbody></table>
+    </section>
+    <section class="panel">
+      <h2>日別ピーク 上位30件</h2>
+      <table><thead><tr><th>日付</th><th>最大3時間送信数</th><th>160到達</th><th>160超過</th><th>ピーク開始</th></tr></thead><tbody>{daily_html}</tbody></table>
+    </section>
+    <section class="panel">
+      <h2>160到達ウィンドウ 上位50件</h2>
+      <table><thead><tr><th>開始</th><th>終了</th><th>送信数</th><th>160超過</th><th>開始時の会話</th></tr></thead><tbody>{windows_html}</tbody></table>
+    </section>
+  </div>
+</body>
+</html>
+"""
+
+
+def write_html_report(path: Path, report: dict) -> None:
+    path.write_text(build_html_report(report), encoding="utf-8")
 
 
 def build_report(input_dir: Path, timezone_name: str, threshold: int, window_hours: float) -> dict:
@@ -319,6 +425,7 @@ def write_outputs(output_dir: Path, report: dict) -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
     write_json(output_dir / "gpt_3h_limit_summary.json", report)
     write_markdown_summary(output_dir / "gpt_3h_limit_summary.md", report)
+    write_html_report(output_dir / "gpt_3h_limit.html", report)
     write_csv(
         output_dir / "gpt_3h_limit_monthly.csv",
         [
@@ -395,7 +502,8 @@ def main() -> int:
         "max_3h_user_messages="
         f"{summary['max_3h_user_messages']} "
         f"threshold={summary['threshold_user_messages']} "
-        f"exceeded={summary['exceeded_threshold']}"
+        f"exceeded={summary['exceeded_threshold']} "
+        "html=gpt_3h_limit.html"
     )
     return 0
 
