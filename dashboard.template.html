@@ -1,0 +1,971 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>ChatGPT 利用ダッシュボード</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg0: #050b18;
+      --bg1: #081222;
+      --panel: rgba(12, 22, 42, 0.78);
+      --panel-strong: rgba(16, 29, 54, 0.92);
+      --line: rgba(133, 165, 222, 0.18);
+      --line-strong: rgba(112, 154, 230, 0.38);
+      --text: #e9f1ff;
+      --muted: #91a5c7;
+      --muted-soft: #7185a7;
+      --primary: #63a0ff;
+      --primary-strong: #2f74ff;
+      --success: #4de18f;
+      --shadow: 0 20px 45px rgba(0, 0, 0, 0.34);
+      --radius: 18px;
+    }
+
+    * { box-sizing: border-box; }
+    html, body { min-height: 100%; }
+    body {
+      margin: 0;
+      color: var(--text);
+      font-family: "Yu Gothic UI", "Hiragino Sans", "Meiryo", system-ui, sans-serif;
+      background:
+        radial-gradient(circle at 12% 8%, rgba(54, 101, 255, 0.24), transparent 35%),
+        radial-gradient(circle at 88% 16%, rgba(24, 182, 151, 0.15), transparent 28%),
+        linear-gradient(180deg, var(--bg0), var(--bg1));
+    }
+
+    button,
+    select {
+      font: inherit;
+    }
+
+    button {
+      cursor: pointer;
+    }
+
+    .shell {
+      width: min(1560px, calc(100vw - 32px));
+      margin: 0 auto;
+      padding: 20px 0 28px;
+      display: grid;
+      gap: 14px;
+    }
+
+    .panel {
+      background: linear-gradient(180deg, var(--panel), rgba(8, 14, 28, 0.88));
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+    }
+
+    .hero {
+      display: flex;
+      justify-content: space-between;
+      gap: 18px;
+      align-items: center;
+      padding: 16px 18px;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      min-width: 0;
+    }
+
+    .app-mark {
+      width: 48px;
+      height: 48px;
+      border-radius: 15px;
+      display: grid;
+      place-items: center;
+      background:
+        radial-gradient(circle at 30% 28%, rgba(255, 255, 255, 0.56), transparent 28%),
+        linear-gradient(145deg, #4c8dff, #2559d8);
+      box-shadow: 0 12px 26px rgba(51, 118, 255, 0.34);
+      font-size: 1.2rem;
+      font-weight: 800;
+      color: white;
+      flex: 0 0 auto;
+    }
+
+    h1, h2, h3, p { margin: 0; }
+
+    h1 {
+      font-size: clamp(1.35rem, 2.1vw, 2rem);
+      letter-spacing: 0.01em;
+    }
+
+    .subtitle {
+      margin-top: 4px;
+      color: var(--muted);
+      font-size: 0.95rem;
+    }
+
+    .hero-meta {
+      display: grid;
+      justify-items: end;
+      gap: 8px;
+      color: var(--muted);
+      font-size: 0.9rem;
+      white-space: nowrap;
+    }
+
+    .meta-chip {
+      padding: 8px 12px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: rgba(12, 20, 37, 0.7);
+    }
+
+    .grid-top,
+    .grid-bottom {
+      display: grid;
+      gap: 14px;
+    }
+
+    .grid-top {
+      grid-template-columns: minmax(0, 2.15fr) minmax(340px, 1fr);
+    }
+
+    .grid-bottom {
+      grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+    }
+
+    .section {
+      padding: 18px;
+    }
+
+    .section-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: flex-start;
+      margin-bottom: 14px;
+    }
+
+    .section-title {
+      font-size: 1.12rem;
+      font-weight: 800;
+      letter-spacing: 0.01em;
+    }
+
+    .section-subtitle {
+      margin-top: 6px;
+      color: var(--muted);
+      font-size: 0.9rem;
+    }
+
+    .trend-chip {
+      flex: 0 0 auto;
+      align-self: flex-start;
+      padding: 8px 12px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: rgba(11, 18, 34, 0.72);
+      color: var(--muted);
+      font-size: 0.88rem;
+    }
+
+    .trend-chip strong {
+      color: var(--success);
+      font-weight: 800;
+    }
+
+    .filters {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+      align-items: end;
+    }
+
+    .field label {
+      display: block;
+      font-size: 0.78rem;
+      color: var(--muted);
+      margin-bottom: 6px;
+      letter-spacing: 0.02em;
+    }
+
+    .field select {
+      width: 100%;
+      padding: 11px 12px;
+      border-radius: 12px;
+      border: 1px solid var(--line);
+      background: rgba(7, 14, 27, 0.84);
+      color: var(--text);
+      appearance: none;
+    }
+
+    .field select:disabled {
+      opacity: 1;
+    }
+
+    .field-wide {
+      min-width: 0;
+    }
+
+    .chart-frame {
+      display: grid;
+      gap: 10px;
+    }
+
+    .bar-chart {
+      display: grid;
+      gap: 10px;
+      align-items: end;
+    }
+
+    .monthly-chart {
+      grid-template-columns: repeat(12, minmax(0, 1fr));
+    }
+
+    .daily-chart {
+      grid-template-columns: repeat(var(--day-count, 31), minmax(0, 1fr));
+      min-width: 760px;
+    }
+
+    .chart-scroll {
+      overflow-x: auto;
+      padding-bottom: 4px;
+    }
+
+    .bar-item {
+      display: grid;
+      grid-template-rows: auto minmax(160px, 1fr) auto;
+      gap: 8px;
+      min-width: 0;
+      border: 0;
+      background: transparent;
+      color: inherit;
+      padding: 0;
+      text-align: center;
+    }
+
+    .bar-item.daily {
+      grid-template-rows: auto minmax(180px, 1fr) auto;
+    }
+
+    .bar-value {
+      color: #dce8ff;
+      font-size: 0.82rem;
+      font-weight: 700;
+      min-height: 1em;
+    }
+
+    .bar-track {
+      position: relative;
+      display: flex;
+      align-items: flex-end;
+      justify-content: center;
+      border-radius: 14px 14px 8px 8px;
+      background:
+        linear-gradient(180deg, rgba(116, 157, 255, 0.10), rgba(116, 157, 255, 0.03)),
+        rgba(255, 255, 255, 0.02);
+      border: 1px solid rgba(145, 177, 240, 0.12);
+      overflow: hidden;
+      min-height: 160px;
+      padding: 8px 6px 8px;
+    }
+
+    .bar-item.daily .bar-track {
+      min-height: 188px;
+    }
+
+    .bar-fill {
+      width: 100%;
+      height: var(--bar-height, 8%);
+      border-radius: 12px 12px 6px 6px;
+      background: linear-gradient(180deg, #87b4ff, #2f75ff);
+      box-shadow: 0 10px 24px rgba(47, 117, 255, 0.25);
+      min-height: 8px;
+      transition: transform 0.18s ease, box-shadow 0.18s ease;
+    }
+
+    .bar-item:hover .bar-fill {
+      transform: translateY(-2px);
+      box-shadow: 0 14px 28px rgba(47, 117, 255, 0.34);
+    }
+
+    .bar-item.selected .bar-track {
+      border-color: var(--line-strong);
+      box-shadow: inset 0 0 0 1px rgba(97, 147, 255, 0.26);
+    }
+
+    .bar-item.selected .bar-fill {
+      background: linear-gradient(180deg, #9bc0ff, #2868f3);
+    }
+
+    .bar-label {
+      color: var(--muted);
+      font-size: 0.8rem;
+      letter-spacing: 0.01em;
+      white-space: nowrap;
+    }
+
+    .summary-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+      margin-top: 8px;
+    }
+
+    .metric {
+      padding: 12px;
+      border-radius: 16px;
+      border: 1px solid var(--line);
+      background:
+        radial-gradient(circle at top left, rgba(101, 150, 255, 0.18), transparent 40%),
+        rgba(10, 17, 32, 0.82);
+      min-height: 108px;
+      display: grid;
+      gap: 8px;
+      align-content: start;
+    }
+
+    .metric .kicker {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      color: var(--muted);
+      font-size: 0.78rem;
+    }
+
+    .metric .big {
+      font-size: clamp(1.55rem, 2vw, 2.15rem);
+      font-weight: 900;
+      line-height: 1.02;
+      letter-spacing: 0.01em;
+    }
+
+    .metric .small {
+      color: var(--muted);
+      font-size: 0.82rem;
+    }
+
+    .metric.emphasis {
+      grid-column: 1 / -1;
+      background:
+        radial-gradient(circle at top left, rgba(116, 164, 255, 0.22), transparent 34%),
+        linear-gradient(180deg, rgba(14, 24, 45, 0.98), rgba(10, 18, 34, 0.92));
+      border-color: rgba(123, 164, 244, 0.28);
+    }
+
+    .metric .value-strong {
+      color: #ffffff;
+    }
+
+    .table {
+      display: grid;
+      gap: 6px;
+    }
+
+    .table-head,
+    .table-row {
+      display: grid;
+      grid-template-columns: minmax(120px, 1.1fr) minmax(120px, 0.95fr) minmax(120px, 0.95fr) minmax(110px, 0.7fr) minmax(140px, 1fr);
+      gap: 10px;
+      align-items: center;
+    }
+
+    .table-head {
+      padding: 10px 12px;
+      color: var(--muted);
+      font-size: 0.8rem;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .table-row {
+      padding: 11px 12px;
+      border-radius: 14px;
+      border: 1px solid transparent;
+      background: rgba(255, 255, 255, 0.02);
+      color: var(--text);
+    }
+
+    .table-row:hover {
+      border-color: rgba(123, 164, 244, 0.22);
+      background: rgba(255, 255, 255, 0.04);
+    }
+
+    .table-row.selected {
+      border-color: rgba(108, 157, 255, 0.42);
+      background: rgba(49, 94, 184, 0.18);
+      box-shadow: inset 0 0 0 1px rgba(108, 157, 255, 0.18);
+    }
+
+    .table-row button {
+      all: unset;
+      cursor: pointer;
+      display: contents;
+    }
+
+    .num {
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .delta.pos { color: var(--success); }
+    .delta.neg { color: #ff948f; }
+    .delta.zero { color: var(--muted); }
+
+    .selected-month {
+      color: #dbe8ff;
+      font-size: 0.93rem;
+      font-weight: 700;
+      margin-top: 6px;
+    }
+
+    .daily-footer {
+      margin-top: 12px;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      background: rgba(11, 18, 34, 0.76);
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 0;
+      overflow: hidden;
+    }
+
+    .daily-footer .stat {
+      padding: 14px 12px 13px;
+      display: grid;
+      gap: 7px;
+      text-align: center;
+    }
+
+    .daily-footer .stat + .stat {
+      border-left: 1px solid rgba(132, 161, 221, 0.15);
+    }
+
+    .daily-footer .label {
+      color: var(--muted);
+      font-size: 0.78rem;
+    }
+
+    .daily-footer .value {
+      font-size: 1.02rem;
+      font-weight: 800;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .empty {
+      color: var(--muted);
+      padding: 10px 2px;
+      font-size: 0.92rem;
+    }
+
+    .footnote {
+      color: var(--muted-soft);
+      font-size: 0.82rem;
+      margin-top: 10px;
+    }
+
+    @media (max-width: 1200px) {
+      .grid-top,
+      .grid-bottom {
+        grid-template-columns: 1fr;
+      }
+
+      .daily-chart {
+        min-width: 680px;
+      }
+    }
+
+    @media (max-width: 820px) {
+      .shell {
+        width: min(100vw, calc(100vw - 16px));
+        padding-top: 8px;
+      }
+
+      .hero {
+        flex-direction: column;
+        align-items: stretch;
+      }
+
+      .hero-meta {
+        justify-items: start;
+      }
+
+      .filters {
+        grid-template-columns: 1fr;
+      }
+
+      .summary-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .metric.emphasis {
+        grid-column: auto;
+      }
+
+      .table-head,
+      .table-row {
+        grid-template-columns: 1fr 1fr;
+      }
+
+      .table-head > :nth-child(n + 3),
+      .table-row > :nth-child(n + 3) {
+        text-align: left;
+      }
+
+      .daily-footer {
+        grid-template-columns: 1fr 1fr;
+      }
+
+      .daily-footer .stat:nth-child(odd):not(:first-child) {
+        border-left: 1px solid rgba(132, 161, 221, 0.15);
+      }
+      .daily-footer .stat:nth-child(n + 3) {
+        border-top: 1px solid rgba(132, 161, 221, 0.15);
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <header class="panel hero">
+      <div class="brand">
+        <div class="app-mark">G</div>
+        <div>
+          <h1>ChatGPT 利用ダッシュボード</h1>
+          <p class="subtitle">送信回数の推移を中心に確認</p>
+        </div>
+      </div>
+      <div class="hero-meta">
+        <div class="meta-chip" id="generatedAt">データ更新: -</div>
+        <div class="meta-chip" id="latestMonthChip">最新月: -</div>
+      </div>
+    </header>
+
+    <section class="panel section">
+      <div class="filters">
+        <div class="field">
+          <label for="periodSelect">期間</label>
+          <select id="periodSelect" disabled>
+            <option>直近12か月</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="unitSelect">表示単位</label>
+          <select id="unitSelect" disabled>
+            <option>月別</option>
+          </select>
+        </div>
+        <div class="field field-wide">
+          <label for="monthSelect">詳細月</label>
+          <select id="monthSelect"></select>
+        </div>
+      </div>
+    </section>
+
+    <section class="grid-top">
+      <section class="panel section">
+        <div class="section-head">
+          <div>
+            <h2 class="section-title">月ごとの送信回数</h2>
+            <div class="section-subtitle">月別の送信回数を比較して、増減の流れをつかめます</div>
+          </div>
+          <div class="trend-chip" id="monthlyDeltaChip">前月比 -</div>
+        </div>
+        <div class="chart-frame">
+          <div class="bar-chart monthly-chart" id="monthlyChart"></div>
+          <div class="footnote">棒の高さは各月の送信回数を表します。選択中の月は強調表示されます。</div>
+        </div>
+      </section>
+
+      <aside class="panel section">
+        <div class="section-head" style="margin-bottom: 6px;">
+          <div>
+            <h2 class="section-title">選択月サマリー</h2>
+            <div class="section-subtitle" id="selectedMonthLabel">-</div>
+          </div>
+        </div>
+        <div class="summary-grid" id="summaryCards"></div>
+      </aside>
+    </section>
+
+    <section class="grid-bottom">
+      <section class="panel section">
+        <div class="section-head">
+          <div>
+            <h2 class="section-title">月別一覧</h2>
+            <div class="section-subtitle">月を選ぶと下の推移も連動します</div>
+          </div>
+        </div>
+        <div class="table" id="monthlyList"></div>
+      </section>
+
+      <section class="panel section">
+        <div class="section-head">
+          <div>
+            <h2 class="section-title" id="dailyTitle">選択月の日別送信回数</h2>
+            <div class="section-subtitle">日ごとの送信回数を確認できます</div>
+          </div>
+        </div>
+        <div class="chart-scroll">
+          <div class="bar-chart daily-chart" id="dailyChart"></div>
+        </div>
+        <div class="daily-footer" id="dailyFooter"></div>
+      </section>
+    </section>
+  </div>
+
+  <script>
+    const FILES = {
+      summary: "dashboard_summary.json",
+      daily: "dashboard_daily.json",
+    };
+
+    const state = {
+      summary: null,
+      monthly: [],
+      daily: [],
+      selectedMonth: null,
+    };
+
+    const els = {
+      generatedAt: document.getElementById("generatedAt"),
+      latestMonthChip: document.getElementById("latestMonthChip"),
+      monthSelect: document.getElementById("monthSelect"),
+      monthlyDeltaChip: document.getElementById("monthlyDeltaChip"),
+      selectedMonthLabel: document.getElementById("selectedMonthLabel"),
+      summaryCards: document.getElementById("summaryCards"),
+      monthlyChart: document.getElementById("monthlyChart"),
+      monthlyList: document.getElementById("monthlyList"),
+      dailyTitle: document.getElementById("dailyTitle"),
+      dailyChart: document.getElementById("dailyChart"),
+      dailyFooter: document.getElementById("dailyFooter"),
+    };
+
+    function fmtInt(value) {
+      return Number(value || 0).toLocaleString("ja-JP");
+    }
+
+    function fmtFloat(value, digits = 1) {
+      return Number(value || 0).toLocaleString("ja-JP", {
+        minimumFractionDigits: digits,
+        maximumFractionDigits: digits,
+      });
+    }
+
+    function monthLabel(month) {
+      const [year, mon] = month.split("-");
+      return `${year}年${mon}月`;
+    }
+
+    function monthShortLabel(month) {
+      return month;
+    }
+
+    function dateLabel(date) {
+      return date.replace(/-/g, "/");
+    }
+
+    function parseMonth(month) {
+      const [year, mon] = month.split("-").map(Number);
+      return { year, mon };
+    }
+
+    function compareMonth(a, b) {
+      return a.month.localeCompare(b.month);
+    }
+
+    function getSortedMonthlyRows() {
+      return [...state.monthly].sort(compareMonth);
+    }
+
+    function getSelectedRow() {
+      return state.monthly.find((row) => row.month === state.selectedMonth) || null;
+    }
+
+    function getPreviousRow() {
+      const rows = getSortedMonthlyRows();
+      const index = rows.findIndex((row) => row.month === state.selectedMonth);
+      if (index <= 0) return null;
+      return rows[index - 1];
+    }
+
+    function getAvgPerDay(row) {
+      if (!row) return 0;
+      if (row.avg_per_active_day !== undefined && row.avg_per_active_day !== null) {
+        return Number(row.avg_per_active_day || 0);
+      }
+      const activeDays = Number(row.active_days || 0);
+      if (!activeDays) return 0;
+      return Number(row.user_messages || 0) / activeDays;
+    }
+
+    function getMonthDays(month) {
+      const { year, mon } = parseMonth(month);
+      return new Date(year, mon, 0).getDate();
+    }
+
+    function buildDailyRows(month) {
+      const monthRows = state.daily.filter((row) => row.month === month);
+      const byDate = new Map(monthRows.map((row) => [row.date, row]));
+      const totalDays = getMonthDays(month);
+      const rows = [];
+
+      for (let day = 1; day <= totalDays; day += 1) {
+        const date = `${month}-${String(day).padStart(2, "0")}`;
+        const row = byDate.get(date);
+        rows.push({
+          date,
+          day,
+          user_messages: Number(row?.user_messages || 0),
+        });
+      }
+
+      return rows;
+    }
+
+    function diffInfo(current, previous) {
+      if (!previous) return { text: "—", cls: "zero" };
+      const diff = Number(current || 0) - Number(previous || 0);
+      const pct = Number(previous || 0) === 0 ? 0 : (diff / Number(previous || 1)) * 100;
+      const sign = diff > 0 ? "+" : "";
+      let cls = "zero";
+      if (diff > 0) cls = "pos";
+      if (diff < 0) cls = "neg";
+      return {
+        text: `${sign}${fmtInt(diff)} (${sign}${fmtFloat(pct, 1)}%)`,
+        cls,
+      };
+    }
+
+    function setSelectedMonth(month) {
+      state.selectedMonth = month;
+      els.monthSelect.value = month;
+      render();
+    }
+
+    function makeBarItem(row, valueKey, labelText, maxValue, selected, daily = false, onClick) {
+      const value = Number(row[valueKey] || 0);
+      const height = maxValue > 0 ? Math.max(8, (value / maxValue) * 100) : 8;
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = `bar-item${selected ? " selected" : ""}${daily ? " daily" : ""}`;
+      button.style.setProperty("--bar-height", `${height}%`);
+      button.title = `${labelText}: ${fmtInt(value)}`;
+      if (onClick) {
+        button.addEventListener("click", onClick);
+      }
+      button.innerHTML = `
+        <span class="bar-value">${fmtInt(value)}</span>
+        <span class="bar-track"><span class="bar-fill"></span></span>
+        <span class="bar-label">${labelText}</span>
+      `;
+      return button;
+    }
+
+    function renderMonthlyChart(rows) {
+      const maxValue = Math.max(1, ...rows.map((row) => Number(row.user_messages || 0)));
+      els.monthlyChart.replaceChildren(
+        ...rows.map((row) => makeBarItem(
+          row,
+          "user_messages",
+          monthShortLabel(row.month),
+          maxValue,
+          row.month === state.selectedMonth,
+          false,
+          () => setSelectedMonth(row.month),
+        )),
+      );
+    }
+
+    function renderMonthlyDeltaBadge(selected, previous) {
+      const diff = diffInfo(selected?.user_messages || 0, previous?.user_messages || 0);
+      if (!previous) {
+        els.monthlyDeltaChip.textContent = "前月比 -";
+        return;
+      }
+      els.monthlyDeltaChip.innerHTML = `前月比 <strong class="${diff.cls}">${diff.text}</strong>`;
+    }
+
+    function renderSummaryCards(selected, previous) {
+      if (!selected) {
+        els.summaryCards.innerHTML = `<div class="empty">月データがありません。</div>`;
+        return;
+      }
+
+      const diff = diffInfo(selected.user_messages, previous?.user_messages || 0);
+      const avg = getAvgPerDay(selected);
+
+      els.selectedMonthLabel.textContent = monthLabel(selected.month);
+      els.summaryCards.innerHTML = `
+        <article class="metric emphasis">
+          <div class="kicker">送信回数 <span class="small">あなたの発言数</span></div>
+          <div class="big value-strong">${fmtInt(selected.user_messages)}</div>
+          <div class="small">${monthLabel(selected.month)} に送った回数です</div>
+        </article>
+        <article class="metric">
+          <div class="kicker">前月差</div>
+          <div class="big ${diff.cls}">${diff.text}</div>
+          <div class="small">送信回数ベースで前月と比較しています</div>
+        </article>
+        <article class="metric">
+          <div class="kicker">活動日数</div>
+          <div class="big">${fmtInt(selected.active_days)}</div>
+          <div class="small">月内で送信があった日数です</div>
+        </article>
+        <article class="metric">
+          <div class="kicker">1日平均送信回数</div>
+          <div class="big">${fmtFloat(avg, 1)}</div>
+          <div class="small">活動日数あたりの送信回数です</div>
+        </article>
+      `;
+    }
+
+    function renderMonthSelect(rows) {
+      els.monthSelect.innerHTML = rows
+        .slice()
+        .sort((a, b) => b.month.localeCompare(a.month))
+        .map((row) => `<option value="${row.month}">${monthLabel(row.month)}</option>`)
+        .join("");
+      els.monthSelect.value = state.selectedMonth;
+    }
+
+    function renderMonthlyList(rows) {
+      const sorted = rows.slice().sort((a, b) => b.month.localeCompare(a.month));
+      const items = sorted.map((row) => {
+        const previousIndex = rows.findIndex((item) => item.month === row.month) - 1;
+        const previous = previousIndex >= 0 ? rows[previousIndex] : null;
+        const diff = diffInfo(row.user_messages, previous?.user_messages || 0);
+        const selected = row.month === state.selectedMonth;
+        return `
+          <div class="table-row${selected ? " selected" : ""}">
+            <button type="button" aria-label="${monthLabel(row.month)} を選択" onclick="window.__selectMonth('${row.month}')">
+              <div>${monthLabel(row.month)}</div>
+              <div class="num">${fmtInt(row.user_messages)}</div>
+              <div class="num delta ${diff.cls}">${diff.text}</div>
+              <div class="num">${fmtInt(row.active_days)} 日</div>
+              <div class="num">${fmtFloat(getAvgPerDay(row), 1)}</div>
+            </button>
+          </div>
+        `;
+      }).join("");
+
+      els.monthlyList.innerHTML = `
+        <div class="table-head">
+          <div>月</div>
+          <div class="num">送信回数</div>
+          <div class="num">前月差</div>
+          <div class="num">活動日数</div>
+          <div class="num">1日平均送信回数</div>
+        </div>
+        ${items || `<div class="empty">月データがありません。</div>`}
+      `;
+    }
+
+    function renderDailySection(selected) {
+      const monthRows = buildDailyRows(selected.month);
+      const maxValue = Math.max(1, ...monthRows.map((row) => Number(row.user_messages || 0)));
+      const total = monthRows.reduce((acc, row) => acc + Number(row.user_messages || 0), 0);
+      const average = monthRows.length ? total / monthRows.length : 0;
+      const peak = monthRows.reduce((best, row) => (row.user_messages > best.user_messages ? row : best), monthRows[0] || null);
+      const trough = monthRows.reduce((best, row) => (row.user_messages < best.user_messages ? row : best), monthRows[0] || null);
+
+      els.dailyTitle.textContent = `選択月の日別送信回数（${monthLabel(selected.month)}）`;
+      els.dailyChart.style.setProperty("--day-count", String(monthRows.length || 31));
+      els.dailyChart.replaceChildren(
+        ...monthRows.map((row, index) => makeBarItem(
+          row,
+          "user_messages",
+          String(row.day).padStart(2, "0"),
+          maxValue,
+          false,
+          true,
+          null,
+        )),
+      );
+
+      els.dailyFooter.innerHTML = `
+        <div class="stat">
+          <div class="label">合計</div>
+          <div class="value">${fmtInt(total)}</div>
+        </div>
+        <div class="stat">
+          <div class="label">平均</div>
+          <div class="value">${fmtFloat(average, 1)}</div>
+        </div>
+        <div class="stat">
+          <div class="label">最大</div>
+          <div class="value">${peak ? `${fmtInt(peak.user_messages)} (${dateLabel(peak.date)})` : "-"}</div>
+        </div>
+        <div class="stat">
+          <div class="label">最小</div>
+          <div class="value">${trough ? `${fmtInt(trough.user_messages)} (${dateLabel(trough.date)})` : "-"}</div>
+        </div>
+      `;
+    }
+
+    function render() {
+      const rows = getSortedMonthlyRows();
+      const selected = getSelectedRow() || rows[rows.length - 1] || null;
+      const previous = getPreviousRow();
+
+      if (!selected) {
+        els.summaryCards.innerHTML = `<div class="empty">月データがありません。</div>`;
+        els.monthlyChart.innerHTML = `<div class="empty">月データがありません。</div>`;
+        els.monthlyList.innerHTML = `<div class="empty">月データがありません。</div>`;
+        els.dailyChart.innerHTML = `<div class="empty">月データがありません。</div>`;
+        els.dailyFooter.innerHTML = `<div class="empty">月データがありません。</div>`;
+        return;
+      }
+
+      renderMonthlyChart(rows);
+      renderMonthlyDeltaBadge(selected, previous);
+      renderSummaryCards(selected, previous);
+      renderMonthSelect(rows);
+      renderMonthlyList(rows);
+      renderDailySection(selected);
+      els.latestMonthChip.textContent = `最新月: ${monthLabel(rows[rows.length - 1].month)}`;
+    }
+
+    async function fetchJson(path) {
+      const response = await fetch(path, { cache: "no-store" });
+      if (!response.ok) {
+        throw new Error(`${path} の読み込みに失敗しました`);
+      }
+      return response.json();
+    }
+
+    async function init() {
+      try {
+        const [summary, daily] = await Promise.all([
+          fetchJson(FILES.summary),
+          fetchJson(FILES.daily),
+        ]);
+
+        state.summary = summary;
+        state.daily = Array.isArray(daily.daily) ? daily.daily : [];
+        state.monthly = Array.isArray(summary.monthly) ? summary.monthly.slice().sort(compareMonth) : [];
+        state.selectedMonth = state.monthly.length ? state.monthly[state.monthly.length - 1].month : null;
+
+        if (summary?.meta?.generated_at) {
+          els.generatedAt.textContent = `データ更新: ${new Date(summary.meta.generated_at).toLocaleString("ja-JP")}`;
+        }
+
+        window.__selectMonth = (month) => setSelectedMonth(month);
+        els.monthSelect.addEventListener("change", (event) => setSelectedMonth(event.target.value));
+
+        render();
+      } catch (error) {
+        els.summaryCards.innerHTML = `<div class="empty">データの読み込みに失敗しました。</div>`;
+        els.monthlyChart.innerHTML = `<div class="empty">${error.message}</div>`;
+        els.monthlyList.innerHTML = `<div class="empty">${error.message}</div>`;
+        els.dailyChart.innerHTML = `<div class="empty">${error.message}</div>`;
+        els.dailyFooter.innerHTML = `<div class="empty">${error.message}</div>`;
+      }
+    }
+
+    init();
+  </script>
+</body>
+</html>
