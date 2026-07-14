@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import shutil
 import subprocess
 import sys
 from datetime import datetime, timedelta, timezone
@@ -101,12 +102,36 @@ def run(cmd: list[str], cwd: Path) -> None:
     subprocess.run(cmd, cwd=cwd, check=True)
 
 
+def add_synthetic_banner(path: Path) -> None:
+    """Mark every published sample page without changing normal user output."""
+    text = path.read_text(encoding="utf-8")
+    banner = """
+<div style="position:sticky;top:0;z-index:9999;padding:10px 16px;text-align:center;font:700 16px/1.4 system-ui,sans-serif;color:#1d2733;background:#ffe08a;border-bottom:2px solid #bd7d00">
+  Synthetic sample data / 合成サンプルデータ — no real ChatGPT export is included.
+</div>
+"""
+    if "Synthetic sample data / 合成サンプルデータ" not in text:
+        text = text.replace("<body>", "<body>" + banner, 1)
+        path.write_text(text, encoding="utf-8")
+
+
+def publish_static_demo(output_dir: Path, publish_dir: Path) -> None:
+    """Copy only assets needed by the static dashboard, never its generated input."""
+    if publish_dir.exists():
+        shutil.rmtree(publish_dir)
+    publish_dir.mkdir(parents=True)
+    for name in ("dashboard.html", "gpt_3h_limit.html", "dashboard_summary.json", "dashboard_daily.json"):
+        shutil.copy2(output_dir / name, publish_dir / name)
+    shutil.copy2(output_dir / "dashboard.html", publish_dir / "index.html")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Build fake sample dashboard output for README screenshots.")
     parser.add_argument("--output-dir", type=Path, default=Path("sample_output"))
     parser.add_argument("--timezone", default="Asia/Tokyo")
     parser.add_argument("--threshold", type=int, default=160)
     parser.add_argument("--window-hours", type=float, default=3.0)
+    parser.add_argument("--publish-dir", type=Path, help="Copy the minimal static demo into this directory.")
     args = parser.parse_args()
 
     repo_root = Path(__file__).resolve().parents[1]
@@ -121,8 +146,12 @@ def main() -> int:
     run([py, "scripts/patch_3h_html.py", "--output-dir", str(output_dir)], repo_root)
     run([py, "scripts/inject_3h_into_dashboard.py", "--output-dir", str(output_dir)], repo_root)
     run([py, "scripts/patch_dashboard_daily_chart.py", "--output-dir", str(output_dir)], repo_root)
+    add_synthetic_banner(output_dir / "dashboard.html")
+    add_synthetic_banner(output_dir / "gpt_3h_limit.html")
     if (output_dir / "index.html").exists():
         (output_dir / "index.html").unlink()
+    if args.publish_dir:
+        publish_static_demo(output_dir, (repo_root / args.publish_dir).resolve())
     print(f"Sample dashboard: {output_dir / 'dashboard.html'}")
     print(f"Sample 3h report: {output_dir / 'gpt_3h_limit.html'}")
     return 0

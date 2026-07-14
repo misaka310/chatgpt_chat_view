@@ -375,6 +375,7 @@ def build_html_report(report: dict) -> str:
     <section class="panel">
       <h2>注意</h2>
       <div class="notice">これは公式のモデル別利用量ではありません。ChatGPTエクスポート上のユーザー送信を数えるため、GPT-5.5以外、Thinking、添付、ツール利用などが混ざる可能性があります。</div>
+      <p><a href="dashboard.html">Return to dashboard / ダッシュボードへ戻る</a></p>
     </section>
     <section class="panel">
       <h2>月別ピーク</h2>
