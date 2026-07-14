@@ -33,7 +33,7 @@ class PublicArtifactsTest(unittest.TestCase):
             self.assertEqual(completed.returncode, 0, msg=completed.stderr)
             self.assertEqual(
                 {path.name for path in published.iterdir()},
-                {"index.html", "dashboard.html", "gpt_3h_limit.html", "dashboard_summary.json", "dashboard_daily.json"},
+                {"index.html", "dashboard.html", "gpt_3h_limit.html", "dashboard_summary.json", "dashboard_daily.json", "favicon.svg"},
             )
             self.assertFalse((published / "conversations.json").exists())
             self.assertFalse((published / "input").exists())

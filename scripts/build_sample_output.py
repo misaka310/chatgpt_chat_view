@@ -120,7 +120,7 @@ def publish_static_demo(output_dir: Path, publish_dir: Path) -> None:
     if publish_dir.exists():
         shutil.rmtree(publish_dir)
     publish_dir.mkdir(parents=True)
-    for name in ("dashboard.html", "gpt_3h_limit.html", "dashboard_summary.json", "dashboard_daily.json"):
+    for name in ("dashboard.html", "gpt_3h_limit.html", "dashboard_summary.json", "dashboard_daily.json", "favicon.svg"):
         shutil.copy2(output_dir / name, publish_dir / name)
     shutil.copy2(output_dir / "dashboard.html", publish_dir / "index.html")
 
@@ -146,6 +146,7 @@ def main() -> int:
     run([py, "scripts/patch_3h_html.py", "--output-dir", str(output_dir)], repo_root)
     run([py, "scripts/inject_3h_into_dashboard.py", "--output-dir", str(output_dir)], repo_root)
     run([py, "scripts/patch_dashboard_daily_chart.py", "--output-dir", str(output_dir)], repo_root)
+    shutil.copy2(repo_root / "favicon.svg", output_dir / "favicon.svg")
     add_synthetic_banner(output_dir / "dashboard.html")
     add_synthetic_banner(output_dir / "gpt_3h_limit.html")
     if (output_dir / "index.html").exists():
