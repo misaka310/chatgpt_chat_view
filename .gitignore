@@ -10,6 +10,10 @@ __pycache__/
 
 /output/
 /sample_output/
+/.demo-build/
+/.demo-pages/
+/benchmark-result.json
+/benchmark-smoke.json
 /parsed_summary.json
 /monthly_*.csv
 /daily_*.csv

@@ -11,6 +11,11 @@ jobs:
       - run: python -m pip install --upgrade pip
       - run: pip install -r requirements.txt
       - run: python -m unittest
+      - run: python scripts/build_sample_output.py --output-dir /tmp/sample-output --publish-dir /tmp/sample-pages
+      - run: test ! -e /tmp/sample-pages/conversations.json
+      - run: test -f /tmp/sample-pages/dashboard.html
+      - run: test -f /tmp/sample-pages/gpt_3h_limit.html
+      - run: python scripts/benchmark_large_export.py --messages 100 --report-file /tmp/benchmark-smoke.json
       - run: python analyze_chat_export.py --input-dir samples --output-dir /tmp/chatgpt-dashboard --timezone Asia/Tokyo --rebuild
       - run: python analyze_gpt_3h_limit.py --input-dir samples --output-dir /tmp/chatgpt-dashboard --timezone Asia/Tokyo --threshold 160 --window-hours 3
       - run: python scripts/patch_3h_html.py --output-dir /tmp/chatgpt-dashboard
