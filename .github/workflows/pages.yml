@@ -1,0 +1,42 @@
+name: deploy synthetic demo
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install --upgrade pip
+      - run: pip install -r requirements.txt
+      - run: python scripts/build_sample_output.py --output-dir "$RUNNER_TEMP/demo-build" --publish-dir "$RUNNER_TEMP/demo-pages"
+      - run: test ! -e "$RUNNER_TEMP/demo-pages/conversations.json"
+      - run: test -f "$RUNNER_TEMP/demo-pages/dashboard.html"
+      - run: test -f "$RUNNER_TEMP/demo-pages/gpt_3h_limit.html"
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: ${{ runner.temp }}/demo-pages
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
