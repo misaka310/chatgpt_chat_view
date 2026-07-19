@@ -1,5 +1,8 @@
 # ChatGPT Export Usage Dashboard
 
+[![CI](https://github.com/misaka310/chatgpt_chat_view/actions/workflows/ci.yml/badge.svg)](https://github.com/misaka310/chatgpt_chat_view/actions/workflows/ci.yml)
+[![Pages](https://github.com/misaka310/chatgpt_chat_view/actions/workflows/pages.yml/badge.svg)](https://github.com/misaka310/chatgpt_chat_view/actions/workflows/pages.yml)
+
 ChatGPT のエクスポートを外部送信せずにローカルで集計し、月別・日別の送信数や、連続3時間の送信数候補をブラウザで確認できる Windows 向けツールです。
 
 ![Synthetic dashboard sample](docs/images/dashboard.png)
@@ -64,6 +67,15 @@ http://127.0.0.1:8733/dashboard.html
 - `gpt_3h_limit.html`: 連続3時間で送信数が多かった時間帯
 
 両画面はリンクで相互に移動できます。
+
+## 開発と検証
+
+```powershell
+python -m unittest discover -s tests -v
+python scripts/benchmark_large_export.py
+```
+
+CIは解析CLIを実行し、重複除外、集計結果、公開成果物、ローカルバインド、実会話データや秘密情報の混入防止を検証します。
 
 ## 制限事項
 
