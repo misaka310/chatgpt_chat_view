@@ -19,7 +19,7 @@ def find_free_port(start: int) -> int:
 
 def serve(path: Path, port: int, page: str) -> None:
     if not (path / page).exists():
-        raise SystemExit(f"missing {path / page}. Run run_analyze.bat first.")
+        raise SystemExit(f"missing {path / page}. Run start.bat first.")
     port = find_free_port(port)
     os.chdir(path)
     server = ThreadingHTTPServer(("127.0.0.1", port), SimpleHTTPRequestHandler)

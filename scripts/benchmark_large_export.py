@@ -13,7 +13,7 @@ from pathlib import Path
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(REPO_ROOT))
+sys.path.insert(0, str(REPO_ROOT / "src"))
 
 from analyze_chat_export_public import collect_stats, write_outputs as write_dashboard_outputs
 from analyze_gpt_3h_limit import build_report, write_outputs as write_limit_outputs

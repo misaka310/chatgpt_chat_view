@@ -1,23 +1,21 @@
-﻿# Repository Cleanup Notes
+# Repository Layout
 
-## What Was Organized
-- Added `.gitignore` to block chat content and generated artifacts.
-- Standardized documentation under `docs/`.
+## Root
 
-## Files Intended for Git
-- `analyze_chat_export.py`
-- `README.md`
-- `docs/README_ja.md`
-- `docs/dashboard_guide.md`
-- `docs/repository_cleanup.md`
-- `.gitignore`
+通常利用の入口は `start.bat` だけです。README、ライセンス、プライバシー／セキュリティ文書、依存関係定義以外の実装ファイルはルートに置きません。
 
-## Files Intentionally Excluded
-- Raw exports: `chat.html`, `conversations-*.json`
-- Generated artifacts: `dashboard.html`, `dashboard_*.json`, `parsed_summary.json`, `daily_*.csv`, `monthly_*.csv`, `category_*.csv`, `keywords_*.csv`, `monthly_summary.md`, `out/`
+## Directories
 
-## Push Checklist
-1. Confirm current branch is not `main` or `master`.
-2. Run basic verification command(s).
-3. Ensure `git status` does not include raw chat files.
-4. Commit and push the working branch.
+- `input/`: ユーザーがChatGPTエクスポートを置く場所。実データはGit管理外。
+- `output/`: 解析結果と再解析判定状態。Git管理外。
+- `src/`: 解析処理とHTMLテンプレート。
+- `scripts/`: 起動、初回セットアップ、補助処理、ベンチマーク。
+- `assets/`: faviconなどの静的素材。
+- `tests/`: 自動テスト。
+- `docs/`: 補足文書。
+
+## Public Safety
+
+- 生のエクスポートと生成されたHTML／JSON／CSVはコミットしません。
+- `input/.keep` だけを追跡します。
+- 公開前に `python -m unittest` を実行します。

@@ -27,6 +27,8 @@ class RepositorySafetyTest(unittest.TestCase):
             "SECURITY.md",
             "PRIVACY.md",
             "docs/BENCHMARKS.md",
+            "start.bat",
+            "scripts/start_dashboard.py",
             "scripts/build_sample_output.py",
             "scripts/benchmark_large_export.py",
             ".github/workflows/ci.yml",

@@ -17,8 +17,8 @@ jobs:
       - run: test -f /tmp/sample-pages/dashboard.html
       - run: test -f /tmp/sample-pages/gpt_3h_limit.html
       - run: python scripts/benchmark_large_export.py --messages 100 --report-file /tmp/benchmark-smoke.json
-      - run: python analyze_chat_export.py --input-dir samples --output-dir /tmp/chatgpt-dashboard --timezone Asia/Tokyo --rebuild
-      - run: python analyze_gpt_3h_limit.py --input-dir samples --output-dir /tmp/chatgpt-dashboard --timezone Asia/Tokyo --threshold 160 --window-hours 3
+      - run: python src/analyze_chat_export.py --input-dir samples --output-dir /tmp/chatgpt-dashboard --timezone Asia/Tokyo --rebuild
+      - run: python src/analyze_gpt_3h_limit.py --input-dir samples --output-dir /tmp/chatgpt-dashboard --timezone Asia/Tokyo --threshold 160 --window-hours 3
       - run: python scripts/patch_3h_html.py --output-dir /tmp/chatgpt-dashboard
       - run: python scripts/inject_3h_into_dashboard.py --output-dir /tmp/chatgpt-dashboard
       - run: python scripts/patch_dashboard_daily_chart.py --output-dir /tmp/chatgpt-dashboard

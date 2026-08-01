@@ -22,7 +22,7 @@ class AnalyzeChatExportTest(unittest.TestCase):
 
             cmd = [
                 sys.executable,
-                str(repo_root / "analyze_chat_export.py"),
+                str(repo_root / "src" / "analyze_chat_export.py"),
                 "--input-dir",
                 str(input_dir),
                 "--output-dir",

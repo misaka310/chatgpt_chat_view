@@ -141,12 +141,12 @@ def main() -> int:
     (input_dir / "conversations.json").write_text(json.dumps(build_export(), ensure_ascii=False), encoding="utf-8")
 
     py = sys.executable
-    run([py, "analyze_chat_export.py", "--input-dir", str(input_dir), "--output-dir", str(output_dir), "--timezone", args.timezone, "--rebuild"], repo_root)
-    run([py, "analyze_gpt_3h_limit.py", "--input-dir", str(input_dir), "--output-dir", str(output_dir), "--timezone", args.timezone, "--threshold", str(args.threshold), "--window-hours", str(args.window_hours)], repo_root)
+    run([py, "src/analyze_chat_export.py", "--input-dir", str(input_dir), "--output-dir", str(output_dir), "--timezone", args.timezone, "--rebuild"], repo_root)
+    run([py, "src/analyze_gpt_3h_limit.py", "--input-dir", str(input_dir), "--output-dir", str(output_dir), "--timezone", args.timezone, "--threshold", str(args.threshold), "--window-hours", str(args.window_hours)], repo_root)
     run([py, "scripts/patch_3h_html.py", "--output-dir", str(output_dir)], repo_root)
     run([py, "scripts/inject_3h_into_dashboard.py", "--output-dir", str(output_dir)], repo_root)
     run([py, "scripts/patch_dashboard_daily_chart.py", "--output-dir", str(output_dir)], repo_root)
-    shutil.copy2(repo_root / "favicon.svg", output_dir / "favicon.svg")
+    shutil.copy2(repo_root / "assets" / "favicon.svg", output_dir / "favicon.svg")
     add_synthetic_banner(output_dir / "dashboard.html")
     add_synthetic_banner(output_dir / "gpt_3h_limit.html")
     if (output_dir / "index.html").exists():

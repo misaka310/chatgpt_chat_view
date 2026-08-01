@@ -48,7 +48,7 @@ class AnalyzeGpt3hLimitTest(unittest.TestCase):
 
             cmd = [
                 sys.executable,
-                str(repo_root / "analyze_gpt_3h_limit.py"),
+                str(repo_root / "src" / "analyze_gpt_3h_limit.py"),
                 "--input-dir",
                 str(input_dir),
                 "--output-dir",
@@ -132,7 +132,7 @@ class AnalyzeGpt3hLimitTest(unittest.TestCase):
 
             cmd = [
                 sys.executable,
-                str(repo_root / "analyze_gpt_3h_limit.py"),
+                str(repo_root / "src" / "analyze_gpt_3h_limit.py"),
                 "--input-dir",
                 str(input_dir),
                 "--output-dir",

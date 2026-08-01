@@ -1,38 +1,21 @@
 # ChatGPT Export Dashboard
 
-このリポジトリは、ChatGPT エクスポートをローカルで解析して、送信回数・日別推移・3時間160送信チェックをブラウザで確認するためのダッシュボードを生成します。
+ChatGPTエクスポートをローカルで解析し、送信回数・日別推移・連続3時間の送信数候補をブラウザで確認するダッシュボードです。
 
-## 使うbat
+## 通常の使い方
 
-- `run_analyze.bat`: `input/` の実データを解析して `output/` を作ります。
-- `run_front.bat`: フロントを開きます。`output/` があれば実データ、なければサンプルを開きます。
+1. `input/` に `chat.html`、`conversations.json`、または `conversations-*.json` を置きます。
+2. ルートの `start.bat` をダブルクリックします。
+3. 入力が前回から変わっていれば解析し、変わっていなければ既存結果を再利用してブラウザを開きます。
 
-## 開き方
+初回は `start.bat` が `setup.bat` を呼び、仮想環境と依存関係を準備します。
 
-```powershell
-.\setup.bat
-.\run_analyze.bat
-.\run_front.bat
-```
+## 主な出力
 
-## まず開くファイル
-
-- `output/index.html`
-
-`run_front.bat` がローカルサーバーを起動してブラウザで開きます。
-
-## 生成ファイル
-
-- `output/index.html`
 - `output/dashboard.html`
 - `output/gpt_3h_limit.html`
 - `output/dashboard_summary.json`
 - `output/dashboard_daily.json`
-- `output/gpt_3h_limit_summary.json`
 - `output/*.csv`
 
-## 見なくてよいファイル
-
-- `parsed_summary.json` は互換用の完全版です。
-- CSV 群は検証や再利用向けです。
-- 普段の確認は `output/index.html` だけで足ります。
+通常利用では `output` 内を直接操作する必要はありません。

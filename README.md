@@ -3,47 +3,31 @@
 [![CI](https://github.com/misaka310/chatgpt_chat_view/actions/workflows/ci.yml/badge.svg)](https://github.com/misaka310/chatgpt_chat_view/actions/workflows/ci.yml)
 [![Pages](https://github.com/misaka310/chatgpt_chat_view/actions/workflows/pages.yml/badge.svg)](https://github.com/misaka310/chatgpt_chat_view/actions/workflows/pages.yml)
 
-ChatGPT のエクスポートを外部送信せずにローカルで集計し、月別・日別の送信数や、連続3時間の送信数候補をブラウザで確認できる Windows 向けツールです。
+ChatGPTのデータエクスポートを外部送信せず、ローカルで集計するWindows向けツールです。月別・日別の送信数、推定トークン数、連続3時間の送信数候補をブラウザで確認できます。
 
 > **非公式・非提携について**
 > このプロジェクトは独立して開発された非公式ツールであり、OpenAIの公式製品、提携製品、承認製品、スポンサー製品ではありません。ChatGPT、OpenAIおよび関連する名称・商標は各権利者に帰属します。
 
 ![Synthetic dashboard sample](docs/images/dashboard.png)
 
-[合成データの公開デモを見る](https://misaka310.github.io/chatgpt_chat_view/)
-
-## できること
-
-- 月別・日別のユーザー送信数を確認
-- 推定トークン数を確認
-- 任意の連続3時間で送信数が多かった時間帯を確認
-- `chat.html`、`conversations.json`、`conversations-*.json`を解析
-- 大きなJSONをチャンク単位で読み込み、重複メッセージを除外
+公開デモ: `https://misaka310.github.io/chatgpt_chat_view/`（合成データのみ）
 
 ## 必要環境
 
 - Windows 11
 - Python 3.11
-- Chromium系ブラウザで動作確認済み
-- GPU、外部API、ChatGPTアカウントは不要
+- Chromium系ブラウザ
+- 初回セットアップ時のみインターネット接続
 
-初回セットアップ時は、Pythonパッケージの取得にインターネット接続が必要です。会話エクスポート自体は外部送信しません。
+GPU、外部API、ChatGPTへのログインは不要です。会話エクスポート自体は外部送信しません。
 
 ## 使い方
 
-### 1. セットアップ
+1. ChatGPTのエクスポートを `input` フォルダへ置きます。
+2. `start.bat` をダブルクリックします。
+3. 必要な解析が終わると、ダッシュボードがブラウザで開きます。
 
-```powershell
-git clone https://github.com/misaka310/chatgpt_chat_view.git
-cd chatgpt_chat_view
-.\setup.bat
-```
-
-Gitを使用しない場合は、GitHubの **Download ZIP** から取得できます。
-
-### 2. エクスポートを配置
-
-`input`フォルダに、次のいずれかを置きます。
+対応する入力は次のいずれかです。
 
 ```text
 input/chat.html
@@ -51,54 +35,57 @@ input/conversations.json
 input/conversations-*.json
 ```
 
-### 3. 解析して表示
+初回だけ、`start.bat` が仮想環境の作成と依存関係のインストールを自動で行います。ダッシュボードを表示している間はローカルHTTPサーバー用のコマンドウィンドウを開いたままにし、使い終わったら閉じてください。
+
+## 再解析を省略する仕組み
+
+`start.bat` は入力ファイルのSHA-256と解析処理の内容を記録します。入力と解析処理が前回と同一で、必要な出力が揃っている場合は再解析せず、既存のダッシュボードをそのまま開きます。
+
+再解析が行われる条件:
+
+- 入力ファイルの内容または構成が変わった
+- 解析コードやHTMLテンプレートが変わった
+- 必要な出力ファイルが不足している
+- 初回実行
+
+手動で必ず再解析する場合:
 
 ```powershell
-.\run_analyze.bat
-.\run_front.bat
+.\.venv\Scripts\python.exe scripts\start_dashboard.py --force
 ```
 
-通常は次のURLが開きます。
+## 出力
 
-```text
-http://127.0.0.1:8733/dashboard.html
-```
+主な表示先は `output/dashboard.html` です。ブラウザ表示には `127.0.0.1` のローカルHTTPサーバーを使います。
 
-## 画面
+主な生成物:
 
-- `dashboard.html`: 月別・日別の送信数と推定トークン数
-- `gpt_3h_limit.html`: 連続3時間で送信数が多かった時間帯
+- `output/dashboard.html`
+- `output/gpt_3h_limit.html`
+- `output/dashboard_summary.json`
+- `output/dashboard_daily.json`
+- `output/*.csv`
 
-両画面はリンクで相互に移動できます。
+## 制限事項と安全性
+
+- 送信数やトークン数はChatGPT公式の利用量ではなく、エクスポート内容からの推定です。
+- モデル別利用量、Thinking、添付、ツール利用は正確に分離できません。
+- `input` と `output` はGit管理対象外です。
+- 生成物には会話タイトルなどが残る場合があります。第三者へ共有する前に内容を確認してください。
+
+詳細は [PRIVACY.md](PRIVACY.md) と [SECURITY.md](SECURITY.md) を参照してください。
 
 ## 開発と検証
 
 ```powershell
 python -m unittest discover -s tests -v
-python scripts/benchmark_large_export.py
+python scripts/build_sample_output.py
+python scripts/benchmark_large_export.py --messages 100 --report-file .\benchmark-smoke.json
 ```
 
-CIは解析CLIを実行し、重複除外、集計結果、公開成果物、ローカルバインド、実会話データや秘密情報の混入防止を検証します。
+CIは解析CLI、重複除外、集計結果、公開成果物、ループバック限定サーバー、実会話データや秘密情報の混入防止を検証します。
 
-## 制限事項
-
-- 送信数とトークン数はChatGPT公式の利用量ではなく、エクスポート内容からの推定です。
-- モデル別利用量、Thinking、添付、ツール利用は正確に分離できません。
-- ChatGPTのエクスポート形式が変わると、解析できなくなる可能性があります。
-- 生成したHTML、JSON、CSVには会話タイトルなどが残る場合があります。第三者へ共有する前に内容を確認してください。
-
-## プライバシーと安全性
-
-解析はローカルで行い、表示サーバーは`127.0.0.1`だけで待ち受けます。
-
-詳細:
-
-- [PRIVACY.md](PRIVACY.md)
-- [SECURITY.md](SECURITY.md)
-
-## 大規模入力
-
-10万メッセージの合成データによる計測結果は、[docs/BENCHMARKS.md](docs/BENCHMARKS.md)に記載しています。
+実装は `src/`、補助処理は `scripts/`、表示素材は `assets/` に配置しています。通常利用時にルートで操作するのは `start.bat` だけです。
 
 ## ライセンス
 

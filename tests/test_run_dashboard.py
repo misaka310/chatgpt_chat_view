@@ -19,8 +19,8 @@ class RunDashboardTest(unittest.TestCase):
             shutil.copy2(sample_src, input_dir / "conversations.json")
 
             commands = [
-                [sys.executable, str(repo_root / "analyze_chat_export.py"), "--input-dir", str(input_dir), "--output-dir", str(output_dir), "--timezone", "Asia/Tokyo", "--rebuild"],
-                [sys.executable, str(repo_root / "analyze_gpt_3h_limit.py"), "--input-dir", str(input_dir), "--output-dir", str(output_dir), "--timezone", "Asia/Tokyo", "--threshold", "160", "--window-hours", "3"],
+                [sys.executable, str(repo_root / "src" / "analyze_chat_export.py"), "--input-dir", str(input_dir), "--output-dir", str(output_dir), "--timezone", "Asia/Tokyo", "--rebuild"],
+                [sys.executable, str(repo_root / "src" / "analyze_gpt_3h_limit.py"), "--input-dir", str(input_dir), "--output-dir", str(output_dir), "--timezone", "Asia/Tokyo", "--threshold", "160", "--window-hours", "3"],
                 [sys.executable, str(repo_root / "scripts" / "patch_3h_html.py"), "--output-dir", str(output_dir)],
                 [sys.executable, str(repo_root / "scripts" / "inject_3h_into_dashboard.py"), "--output-dir", str(output_dir)],
                 [sys.executable, str(repo_root / "scripts" / "patch_dashboard_daily_chart.py"), "--output-dir", str(output_dir)],

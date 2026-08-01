@@ -19,9 +19,9 @@ Use this before switching the repository visibility to public.
 
 ## First-run UX
 
-- [ ] `setup.bat` succeeds on Windows.
-- [ ] `run_analyze.bat` reads `input/` and generates `output/`.
-- [ ] `run_front.bat` opens `output/dashboard.html`.
+- [ ] First-run setup through `start.bat` succeeds on Windows.
+- [ ] `start.bat` analyzes changed `input/`, reuses unchanged results, and opens the dashboard.
+- [ ] The browser opens `output/dashboard.html` through the loopback-only local server.
 - [ ] `dashboard.html` links to the 3-hour usage report.
 
 ## Verification
