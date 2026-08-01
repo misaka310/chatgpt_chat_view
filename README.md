@@ -5,6 +5,9 @@
 
 ChatGPT のエクスポートを外部送信せずにローカルで集計し、月別・日別の送信数や、連続3時間の送信数候補をブラウザで確認できる Windows 向けツールです。
 
+> **非公式・非提携について**
+> このプロジェクトは独立して開発された非公式ツールであり、OpenAIの公式製品、提携製品、承認製品、スポンサー製品ではありません。ChatGPT、OpenAIおよび関連する名称・商標は各権利者に帰属します。
+
 ![Synthetic dashboard sample](docs/images/dashboard.png)
 
 [合成データの公開デモを見る](https://misaka310.github.io/chatgpt_chat_view/)
