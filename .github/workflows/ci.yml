@@ -28,7 +28,9 @@ jobs:
       - run: python scripts/patch_3h_html.py --output-dir /tmp/chatgpt-dashboard
       - run: python scripts/inject_3h_into_dashboard.py --output-dir /tmp/chatgpt-dashboard
       - run: python scripts/patch_dashboard_daily_chart.py --output-dir /tmp/chatgpt-dashboard
-      - run: npm ci
+      - run: npm ci --ignore-scripts
+        working-directory: sites/usage-dashboard
+      - run: npm audit --audit-level=high
         working-directory: sites/usage-dashboard
       - run: npm test
         working-directory: sites/usage-dashboard
