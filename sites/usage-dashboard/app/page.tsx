@@ -25,8 +25,17 @@ type DailyRow = {
   estimated_tokens: number;
 };
 
+type HourlyWeekdayRow = {
+  month: string;
+  weekday: number;
+  hour: number;
+  sent_messages: number;
+  non_voice_messages: number;
+  voice_messages: number;
+};
+
 type UsageData = {
-  schema_version: 2;
+  schema_version: 3;
   generated_at: string;
   timezone: string;
   method: string;
@@ -42,10 +51,12 @@ type UsageData = {
   };
   monthly: MonthlyRow[];
   daily: DailyRow[];
+  hourly_weekday: HourlyWeekdayRow[];
 };
 
 type CountMode = "all" | "nonVoice" | "voice";
 type DisplayDay = DailyRow & { display_messages: number };
+type IconName = "logo" | "dashboard" | "send" | "history" | "filter" | "report" | "settings" | "moon" | "download" | "calendar" | "chart";
 
 const numberFormatter = new Intl.NumberFormat("ja-JP");
 const decimalFormatter = new Intl.NumberFormat("ja-JP", {
@@ -57,37 +68,62 @@ const countModes: Record<
   CountMode,
   {
     label: string;
-    shortLabel: string;
     messageField: "sent_messages" | "non_voice_messages" | "voice_messages";
     activeDaysField: "active_days" | "non_voice_active_days" | "voice_active_days";
   }
 > = {
-  all: {
-    label: "全件",
-    shortLabel: "全件",
-    messageField: "sent_messages",
-    activeDaysField: "active_days",
-  },
-  nonVoice: {
-    label: "音声を除く",
-    shortLabel: "音声除外",
-    messageField: "non_voice_messages",
-    activeDaysField: "non_voice_active_days",
-  },
-  voice: {
-    label: "音声のみ",
-    shortLabel: "音声のみ",
-    messageField: "voice_messages",
-    activeDaysField: "voice_active_days",
-  },
+  all: { label: "すべて", messageField: "sent_messages", activeDaysField: "active_days" },
+  nonVoice: { label: "音声を除く", messageField: "non_voice_messages", activeDaysField: "non_voice_active_days" },
+  voice: { label: "音声のみ", messageField: "voice_messages", activeDaysField: "voice_active_days" },
 };
+
+const weekdays = ["月", "火", "水", "木", "金", "土", "日"];
+
+function Icon({ name, size = 22 }: { name: IconName; size?: number }) {
+  const common = {
+    width: size,
+    height: size,
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: 1.8,
+    strokeLinecap: "round" as const,
+    strokeLinejoin: "round" as const,
+    "aria-hidden": true,
+  };
+
+  if (name === "logo") {
+    return (
+      <svg {...common} viewBox="0 0 32 32">
+        <path fill="currentColor" stroke="none" d="M15.9 2.2c3.5 0 5.4 2.9 4.7 5.7 2.8-1 6 .5 7 3.8 1 3.2-.8 6.1-3.7 6.8 2 2.2 1.7 5.8-.8 7.8-2.6 2-6 1.2-7.4-1.4-1.5 2.6-4.9 3.3-7.4 1.3-2.5-2-2.8-5.6-.8-7.8-2.9-.7-4.7-3.6-3.7-6.8 1-3.2 4.2-4.7 7-3.7-.6-2.8 1.4-5.7 5.1-5.7Z" opacity=".3"/>
+        <path fill="currentColor" stroke="none" d="M13.5 4.7c2.7-2.2 6.8-.7 7.1 2.8.2 1.7-.7 3.3-2.2 4.2l-5.8 3.5c-1.9 1.1-4.4.3-5.3-1.7-.8-1.8-.1-3.9 1.6-4.9l4.6-3.9Z"/>
+        <path fill="currentColor" stroke="none" d="M18.5 27.3c-2.7 2.2-6.8.7-7.1-2.8-.2-1.7.7-3.3 2.2-4.2l5.8-3.5c1.9-1.1 4.4-.3 5.3 1.7.8 1.8.1 3.9-1.6 4.9l-4.6 3.9Z"/>
+      </svg>
+    );
+  }
+
+  const paths: Record<Exclude<IconName, "logo">, React.ReactNode> = {
+    dashboard: <><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 9h10M7 14h4"/></>,
+    send: <><path d="m3 11 18-8-7 18-3-7-8-3Z"/><path d="m11 14 4-4"/></>,
+    history: <><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v6h6M12 7v5l3 2"/></>,
+    filter: <><path d="M4 6h16M7 12h10M10 18h4"/><circle cx="8" cy="6" r="1.5"/><circle cx="15" cy="12" r="1.5"/><circle cx="12" cy="18" r="1.5"/></>,
+    report: <><path d="M5 20V10M10 20V4M15 20v-7M20 20V7"/></>,
+    settings: <><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-2.8 2.8-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6v.2h-4V21a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1L4.2 17l.1-.1a1.7 1.7 0 0 0 .3-1.9A1.7 1.7 0 0 0 3 14H2.8v-4H3a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9L4.2 7 7 4.2l.1.1A1.7 1.7 0 0 0 9 4.6 1.7 1.7 0 0 0 10 3V2.8h4V3a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1L19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.6 1h.2v4H21a1.7 1.7 0 0 0-1.6 1Z"/></>,
+    moon: <path d="M20 15.5A8 8 0 0 1 8.5 4 8.5 8.5 0 1 0 20 15.5Z"/>,
+    download: <><path d="M12 3v12M7 10l5 5 5-5"/><path d="M5 20h14"/></>,
+    calendar: <><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 10h18"/></>,
+    chart: <><path d="M4 19V9M10 19V5M16 19v-7M22 19V3"/></>,
+  };
+
+  return <svg {...common}>{paths[name as Exclude<IconName, "logo">]}</svg>;
+}
 
 function safeNumber(value: unknown) {
   const number = Number(value);
   return Number.isFinite(number) ? number : 0;
 }
 
-function messageCount(row: MonthlyRow | DailyRow | UsageData["totals"] | null, mode: CountMode) {
+function messageCount(row: MonthlyRow | DailyRow | HourlyWeekdayRow | UsageData["totals"] | null, mode: CountMode) {
   if (!row) return 0;
   return safeNumber(row[countModes[mode].messageField]);
 }
@@ -99,21 +135,22 @@ function activeDays(row: MonthlyRow | UsageData["totals"] | null, mode: CountMod
 
 function formatMonth(month: string) {
   const [year, value] = month.split("-");
-  return `${year}年${Number(value)}月`;
+  return `${year}年${String(Number(value)).padStart(2, "0")}月`;
 }
 
-function formatMonthShort(month: string) {
-  const [year, value] = month.split("-");
-  return `${year.slice(2)}/${Number(value)}`;
+function formatMonthAxis(month: string) {
+  return month.replace("-", "-");
 }
 
 function formatDate(date: string) {
   const [, month, day] = date.split("-");
-  return `${Number(month)}/${Number(day)}`;
+  return `${month}/${day}`;
 }
 
-function formatDateLong(date: string) {
-  return date.replaceAll("-", "/");
+function formatDateWithWeekday(date: string) {
+  const value = new Date(`${date}T00:00:00+09:00`);
+  const day = ["日", "月", "火", "水", "木", "金", "土"][value.getDay()];
+  return `${formatDate(date)}（${day}）`;
 }
 
 function monthDayCount(month: string) {
@@ -122,70 +159,73 @@ function monthDayCount(month: string) {
 }
 
 function deltaInfo(current: number, previous: number | null) {
-  if (previous === null) return { text: "-", className: "zero" };
+  if (previous === null) return { value: "-", percent: "", className: "neutral" };
   const delta = current - previous;
-  if (delta > 0) return { text: `+${numberFormatter.format(delta)}`, className: "pos" };
-  if (delta < 0) return { text: numberFormatter.format(delta), className: "neg" };
-  return { text: "±0", className: "zero" };
+  const percent = previous > 0 ? (delta / previous) * 100 : 0;
+  return {
+    value: `${delta > 0 ? "+" : ""}${numberFormatter.format(delta)}`,
+    percent: previous > 0 ? ` (${delta > 0 ? "+" : ""}${decimalFormatter.format(percent)}%)` : "",
+    className: delta > 0 ? "positive" : delta < 0 ? "negative" : "neutral",
+  };
 }
 
-function MetricCard({
-  label,
-  value,
-  note,
-  selected = false,
-}: {
-  label: string;
-  value: string;
-  note: string;
-  selected?: boolean;
-}) {
+function niceMaximum(value: number, targetStep: number) {
+  return Math.max(targetStep, Math.ceil(value / targetStep) * targetStep);
+}
+
+function downloadCsv(rows: DisplayDay[], month: string, mode: CountMode) {
+  const csv = [
+    ["date", "messages"],
+    ...rows.map((row) => [row.date, String(row.display_messages)]),
+  ]
+    .map((row) => row.join(","))
+    .join("\n");
+  const blob = new Blob([`\uFEFF${csv}`], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = `chatgpt-usage-${month}-${mode}.csv`;
+  anchor.click();
+  URL.revokeObjectURL(url);
+}
+
+function Sidebar() {
+  const links: Array<{ label: string; icon: IconName; href: string; active?: boolean }> = [
+    { label: "ダッシュボード", icon: "dashboard", href: "#dashboard", active: true },
+    { label: "キャンペーン", icon: "send", href: "#monthly" },
+    { label: "送信履歴", icon: "history", href: "#daily" },
+    { label: "除外リスト", icon: "filter", href: "#filters" },
+    { label: "レポート", icon: "report", href: "#reports" },
+    { label: "設定", icon: "settings", href: "#settings" },
+  ];
+
   return (
-    <article className={`metric${selected ? " selected-mode" : ""}`}>
-      <span className="metric-label">{label}</span>
-      <strong className="metric-value">{value}</strong>
-      <span className="metric-note">{note}</span>
+    <aside className="sidebar" aria-label="ダッシュボードナビゲーション">
+      <a className="brand" href="#dashboard" aria-label="先頭へ"><Icon name="logo" size={34} /></a>
+      <nav className="side-nav">
+        {links.map((link) => (
+          <a key={link.label} className={link.active ? "active" : ""} href={link.href}>
+            <Icon name={link.icon} size={23} />
+            <span>{link.label}</span>
+          </a>
+        ))}
+      </nav>
+      <div className="theme-indicator" aria-label="ダークモード使用中">
+        <Icon name="moon" size={22} />
+        <span>ダーク<br />モード</span>
+      </div>
+    </aside>
+  );
+}
+
+function MetricCard({ label, value, note, compact = false, accent = false }: { label: string; value: string; note: string; compact?: boolean; accent?: boolean }) {
+  return (
+    <article className={`summary-card${compact ? " compact" : ""}${accent ? " accent" : ""}`}>
+      <span>{label}</span>
+      <strong>{value}</strong>
+      <small>{note}</small>
     </article>
   );
-}
-
-function RankRow({
-  rank,
-  label,
-  value,
-  tone,
-  onClick,
-  selected = false,
-}: {
-  rank: number;
-  label: string;
-  value: string;
-  tone: number;
-  onClick?: () => void;
-  selected?: boolean;
-}) {
-  const content = (
-    <>
-      <span className="rank-number">{rank}</span>
-      <span className="rank-main">
-        <span className="rank-label">{label}</span>
-        <span className="rank-track" aria-hidden="true">
-          <span className="rank-fill" style={{ width: `${Math.max(3, tone)}%` }} />
-        </span>
-      </span>
-      <strong className="rank-value">{value}</strong>
-    </>
-  );
-
-  if (onClick) {
-    return (
-      <button type="button" className={`rank-row${selected ? " selected" : ""}`} onClick={onClick}>
-        {content}
-      </button>
-    );
-  }
-
-  return <div className="rank-row static">{content}</div>;
 }
 
 export default function Home() {
@@ -210,17 +250,14 @@ export default function Home() {
         if (!active) return;
         setError(reason instanceof Error ? reason.message : "集計データを読み込めませんでした");
       });
-
-    return () => {
-      active = false;
-    };
+    return () => { active = false; };
   }, []);
 
   const monthly = useMemo(
     () => [...(data?.monthly ?? [])].sort((left, right) => left.month.localeCompare(right.month)),
     [data],
   );
-  const visibleMonthly = monthly.slice(-12);
+  const visibleMonthly = monthly.slice(-11);
   const selected = monthly.find((row) => row.month === selectedMonth) ?? monthly.at(-1) ?? null;
   const selectedIndex = selected ? monthly.findIndex((row) => row.month === selected.month) : -1;
   const previous = selectedIndex > 0 ? monthly[selectedIndex - 1] : null;
@@ -228,12 +265,9 @@ export default function Home() {
   const selectedDays = useMemo<DisplayDay[]>(() => {
     if (!selected) return [];
     const source = new Map(
-      (data?.daily ?? [])
-        .filter((row) => row.month === selected.month)
-        .map((row) => [row.date, row]),
+      (data?.daily ?? []).filter((row) => row.month === selected.month).map((row) => [row.date, row]),
     );
-    const count = monthDayCount(selected.month);
-    return Array.from({ length: count }, (_, index) => {
+    return Array.from({ length: monthDayCount(selected.month) }, (_, index) => {
       const day = index + 1;
       const date = `${selected.month}-${String(day).padStart(2, "0")}`;
       const row = source.get(date) ?? {
@@ -250,288 +284,218 @@ export default function Home() {
     });
   }, [countMode, data?.daily, selected]);
 
-  const monthMaximum = Math.max(1, ...visibleMonthly.map((row) => messageCount(row, countMode)));
-  const dayMaximum = Math.max(1, ...selectedDays.map((row) => row.display_messages));
-  const dayTotal = selectedDays.reduce((sum, row) => sum + row.display_messages, 0);
-  const dayAverage = selectedDays.length ? dayTotal / selectedDays.length : 0;
-  const dayPeak = selectedDays.reduce<DisplayDay | null>(
-    (best, row) => (!best || row.display_messages > best.display_messages ? row : best),
-    null,
-  );
-  const dayMinimum = selectedDays.reduce<DisplayDay | null>(
-    (best, row) => (!best || row.display_messages < best.display_messages ? row : best),
-    null,
-  );
+  const monthlyMaximum = niceMaximum(Math.max(1, ...visibleMonthly.map((row) => messageCount(row, countMode))), 3000);
+  const dailyMaximum = niceMaximum(Math.max(1, ...selectedDays.map((row) => row.display_messages)), 250);
+  const monthlyTicks = Array.from({ length: 5 }, (_, index) => Math.round((monthlyMaximum / 4) * index));
+  const dailyTicks = Array.from({ length: 5 }, (_, index) => Math.round((dailyMaximum / 4) * index));
 
+  const selectedTotal = messageCount(selected, countMode);
+  const selectedActiveDays = activeDays(selected, countMode);
+  const selectedAverage = selectedActiveDays ? selectedTotal / selectedActiveDays : 0;
+  const selectedDelta = deltaInfo(selectedTotal, previous ? messageCount(previous, countMode) : null);
+  const dayPeak = selectedDays.reduce<DisplayDay | null>((best, row) => (!best || row.display_messages > best.display_messages ? row : best), null);
   const dailyRanking = [...selectedDays]
     .filter((row) => row.display_messages > 0)
-    .sort((left, right) => right.display_messages - left.display_messages || right.date.localeCompare(left.date))
+    .sort((left, right) => right.display_messages - left.display_messages || left.date.localeCompare(right.date))
     .slice(0, 5);
-  const monthlyRanking = [...visibleMonthly]
-    .sort(
-      (left, right) =>
-        messageCount(right, countMode) - messageCount(left, countMode) || right.month.localeCompare(left.month),
-    );
-  const recentActivity = [...(data?.daily ?? [])]
-    .map((row) => ({ ...row, display_messages: messageCount(row, countMode) }))
+  const recentActivity = [...selectedDays]
     .filter((row) => row.display_messages > 0)
     .sort((left, right) => right.date.localeCompare(left.date))
     .slice(0, 5);
 
+  const hourlyRows = (data?.hourly_weekday ?? []).filter((row) => row.month === selected?.month);
+  const heatMap = new Map(hourlyRows.map((row) => [`${row.weekday}-${row.hour}`, messageCount(row, countMode)]));
+  const heatMaximum = Math.max(1, ...heatMap.values());
+
   if (error) {
-    return (
-      <main className="shell">
-        <section className="panel notice-card">
-          <h1>ChatGPT 利用ダッシュボード</h1>
-          <p>{error}</p>
-          <p className="muted">ローカルでSites用データを生成してから、もう一度開いてください。</p>
-        </section>
-      </main>
-    );
+    return <main className="center-message"><h1>送信分析ダッシュボード</h1><p>{error}</p></main>;
   }
 
   if (!data) {
-    return (
-      <main className="shell" aria-busy="true">
-        <section className="panel notice-card loading-card">
-          <div className="loading-mark" aria-hidden="true" />
-          <h1>ChatGPT 利用ダッシュボード</h1>
-          <p>会話本文を含まない集計データを読み込んでいます。</p>
-        </section>
-      </main>
-    );
+    return <main className="center-message" aria-busy="true"><div className="spinner"/><h1>送信分析ダッシュボード</h1><p>会話本文を含まない集計データを読み込んでいます。</p></main>;
   }
 
-  const selectedDelta = deltaInfo(
-    messageCount(selected, countMode),
-    previous ? messageCount(previous, countMode) : null,
-  );
-  const selectedActiveDays = activeDays(selected, countMode);
-  const selectedActiveAverage = selectedActiveDays
-    ? messageCount(selected, countMode) / selectedActiveDays
-    : 0;
-
   return (
-    <main className="shell">
-      <header className="topbar">
-        <div className="title-group">
-          <span className="eyebrow">SEND ANALYTICS</span>
-          <h1>ChatGPT 利用ダッシュボード</h1>
-          <p>匿名化した送信回数だけを月別・日別に確認</p>
-        </div>
-        <div className="topbar-meta">
-          <div>
-            <span>対象月</span>
-            <strong>{selected ? formatMonth(selected.month) : "-"}</strong>
-          </div>
-          <div>
-            <span>集計時刻</span>
-            <strong>{new Date(data.generated_at).toLocaleString("ja-JP")}</strong>
-          </div>
-        </div>
-      </header>
-
-      <section className="control-bar" aria-label="表示設定">
-        <div className="mode-switch" role="group" aria-label="集計対象">
-          {(Object.keys(countModes) as CountMode[]).map((mode) => (
-            <button
-              type="button"
-              key={mode}
-              className={countMode === mode ? "active" : ""}
-              aria-pressed={countMode === mode}
-              onClick={() => setCountMode(mode)}
-            >
-              {countModes[mode].shortLabel}
+    <div className="app-shell">
+      <Sidebar />
+      <main id="dashboard" className="dashboard">
+        <header className="dashboard-header">
+          <h1>送信分析ダッシュボード</h1>
+          <div className="header-actions">
+            <label className="period-select">
+              <span>期間選択</span>
+              <Icon name="calendar" size={17} />
+              <select value={selected?.month ?? ""} onChange={(event) => setSelectedMonth(event.target.value)}>
+                {[...monthly].reverse().map((row) => <option key={row.month} value={row.month}>{formatMonth(row.month)}</option>)}
+              </select>
+            </label>
+            <button className="export-button" type="button" onClick={() => selected && downloadCsv(selectedDays, selected.month, countMode)}>
+              <Icon name="download" size={18} />
+              エクスポート
             </button>
-          ))}
-        </div>
-        <label className="month-select">
-          <span>詳細月</span>
-          <select value={selected?.month ?? ""} onChange={(event) => setSelectedMonth(event.target.value)}>
-            {[...monthly].reverse().map((row) => (
-              <option key={row.month} value={row.month}>
-                {formatMonth(row.month)}
-              </option>
-            ))}
-          </select>
-        </label>
-      </section>
+          </div>
+        </header>
 
-      <section className="grid-top">
-        <section className="panel section monthly-panel">
-          <div className="section-head">
-            <div>
-              <span className="section-kicker">MONTHLY</span>
-              <h2 className="section-title">月ごとの送信回数</h2>
-              <p className="section-subtitle">直近12か月・{countModes[countMode].label}</p>
-            </div>
-            <div className="trend-chip">
-              前月差 <strong className={selectedDelta.className}>{selectedDelta.text}</strong>
-            </div>
-          </div>
-
-          <div className="bar-chart monthly-chart" role="list" aria-label={`月別送信回数（${countModes[countMode].label}）`}>
-            {visibleMonthly.map((row) => {
-              const count = messageCount(row, countMode);
-              const height = Math.max(4, (count / monthMaximum) * 100);
-              const isSelected = row.month === selected?.month;
-              return (
-                <button
-                  type="button"
-                  className={`bar-item monthly${isSelected ? " selected" : ""}`}
-                  key={row.month}
-                  onClick={() => setSelectedMonth(row.month)}
-                  aria-pressed={isSelected}
-                  title={`${formatMonth(row.month)}: ${numberFormatter.format(count)}回`}
-                >
-                  <span className="bar-value">{numberFormatter.format(count)}</span>
-                  <span className="bar-track">
-                    <span className="bar-fill" style={{ height: `${height}%` }} />
-                  </span>
-                  <span className="bar-label">{formatMonthShort(row.month)}</span>
-                </button>
-              );
-            })}
-          </div>
-          <p className="footnote">棒を選ぶと、右のサマリーと日別表示が同じ月へ切り替わります。</p>
-        </section>
-
-        <aside className="panel section summary-panel">
-          <div className="section-head compact">
-            <div>
-              <span className="section-kicker">SUMMARY</span>
-              <h2 className="section-title">選択月サマリー</h2>
-              <p className="selected-month">{selected ? formatMonth(selected.month) : "-"}</p>
-            </div>
-          </div>
-          <div className="summary-grid">
-            <MetricCard label="全件" value={numberFormatter.format(messageCount(selected, "all"))} note="送信回数" selected={countMode === "all"} />
-            <MetricCard label="音声を除く" value={numberFormatter.format(messageCount(selected, "nonVoice"))} note="音声会話を除外" selected={countMode === "nonVoice"} />
-            <MetricCard label="音声のみ" value={numberFormatter.format(messageCount(selected, "voice"))} note="識別できた音声発話" selected={countMode === "voice"} />
-            <MetricCard label="前月差" value={selectedDelta.text} note={countModes[countMode].label} />
-            <MetricCard label="活動日数" value={`${numberFormatter.format(selectedActiveDays)}日`} note="送信があった日" />
-            <MetricCard label="1日平均" value={decimalFormatter.format(selectedActiveAverage)} note="活動日あたり" />
-          </div>
-        </aside>
-      </section>
-
-      <section className="panel section daily-panel">
-        <div className="section-head">
-          <div>
-            <span className="section-kicker">DAILY</span>
-            <h2 className="section-title">{selected ? `${formatMonth(selected.month)}の日別送信回数` : "日別送信回数"}</h2>
-            <p className="section-subtitle">31日すべてを横スクロールなしで表示・{countModes[countMode].label}</p>
-          </div>
-        </div>
-        <div className="bar-chart daily-chart" role="list" aria-label={`${selected ? formatMonth(selected.month) : "選択月"}の日別送信回数`}>
-          {selectedDays.map((row) => {
-            const height = Math.max(3, (row.display_messages / dayMaximum) * 100);
-            return (
-              <div className="bar-item daily" key={row.date} title={`${formatDateLong(row.date)}: ${numberFormatter.format(row.display_messages)}回`}>
-                <span className="bar-value">{numberFormatter.format(row.display_messages)}</span>
-                <span className="bar-track">
-                  <span className="bar-fill" style={{ height: `${height}%` }} />
-                </span>
-                <span className="bar-label">{row.day}日</span>
+        <section className="top-grid">
+          <section id="monthly" className="panel monthly-panel">
+            <div className="panel-heading">
+              <div>
+                <h2>月ごとの送信回数 <span className="info-dot">i</span></h2>
+                <p>月別の送信回数を比較して、増減の流れをつかめます</p>
               </div>
-            );
-          })}
-        </div>
-        <div className="daily-footer">
-          <div className="daily-stat"><span>合計</span><strong>{numberFormatter.format(dayTotal)}</strong></div>
-          <div className="daily-stat"><span>暦日平均</span><strong>{decimalFormatter.format(dayAverage)}</strong></div>
-          <div className="daily-stat"><span>最大</span><strong>{dayPeak ? `${numberFormatter.format(dayPeak.display_messages)}・${formatDate(dayPeak.date)}` : "-"}</strong></div>
-          <div className="daily-stat"><span>最小</span><strong>{dayMinimum ? `${numberFormatter.format(dayMinimum.display_messages)}・${formatDate(dayMinimum.date)}` : "-"}</strong></div>
-        </div>
-      </section>
-
-      <section className="insight-grid">
-        <section className="panel section insight-panel">
-          <div className="section-head compact">
-            <div>
-              <span className="section-kicker">TOP DAYS</span>
-              <h2 className="section-title">送信回数ランキング</h2>
-              <p className="section-subtitle">選択月の上位活動日</p>
+              <div className={`delta-pill ${selectedDelta.className}`}>前月比 <strong>{selectedDelta.value}{selectedDelta.percent}</strong></div>
             </div>
-          </div>
-          <div className="rank-list">
-            {dailyRanking.length ? dailyRanking.map((row, index) => (
-              <RankRow
-                key={row.date}
-                rank={index + 1}
-                label={formatDateLong(row.date)}
-                value={numberFormatter.format(row.display_messages)}
-                tone={(row.display_messages / Math.max(1, dailyRanking[0].display_messages)) * 100}
-              />
-            )) : <p className="empty-state">この月には対象の送信がありません。</p>}
-          </div>
-        </section>
-
-        <section className="panel section insight-panel monthly-ranking-panel">
-          <div className="section-head compact">
-            <div>
-              <span className="section-kicker">MONTH RANK</span>
-              <h2 className="section-title">月別ランキング</h2>
-              <p className="section-subtitle">直近12か月をすべて比較</p>
-            </div>
-          </div>
-          <div className="rank-list monthly-rank-list">
-            {monthlyRanking.map((row, index) => (
-              <RankRow
-                key={row.month}
-                rank={index + 1}
-                label={formatMonth(row.month)}
-                value={numberFormatter.format(messageCount(row, countMode))}
-                tone={(messageCount(row, countMode) / monthMaximum) * 100}
-                onClick={() => setSelectedMonth(row.month)}
-                selected={row.month === selected?.month}
-              />
-            ))}
-          </div>
-        </section>
-
-        <section className="panel section insight-panel">
-          <div className="section-head compact">
-            <div>
-              <span className="section-kicker">RECENT DAYS</span>
-              <h2 className="section-title">最近の活動日</h2>
-              <p className="section-subtitle">送信があった直近の日付</p>
-            </div>
-          </div>
-          <div className="recent-list">
-            {recentActivity.length ? recentActivity.map((row) => (
-              <div className="recent-row" key={row.date}>
-                <span>{formatDateLong(row.date)}</span>
-                <strong>{numberFormatter.format(row.display_messages)}回</strong>
+            <div className="axis-chart monthly-axis-chart" aria-label={`月別送信回数（${countModes[countMode].label}）`}>
+              <div className="y-axis">
+                {[...monthlyTicks].reverse().map((tick) => <span key={tick}>{numberFormatter.format(tick)}</span>)}
               </div>
-            )) : <p className="empty-state">対象の活動日はありません。</p>}
+              <div className="plot monthly-plot">
+                {[...monthlyTicks].reverse().map((tick, index) => <i key={tick} style={{ top: `${index * 25}%` }} />)}
+                <div className="monthly-bars">
+                  {visibleMonthly.map((row) => {
+                    const count = messageCount(row, countMode);
+                    const selectedBar = row.month === selected?.month;
+                    return (
+                      <button type="button" key={row.month} className={selectedBar ? "selected" : ""} onClick={() => setSelectedMonth(row.month)} title={`${formatMonth(row.month)}: ${numberFormatter.format(count)}回`}>
+                        <span className="chart-value">{numberFormatter.format(count)}</span>
+                        <span className="bar-shell"><span className="bar-fill" style={{ height: `${Math.max(1.5, (count / monthlyMaximum) * 100)}%` }} /></span>
+                        <span className="chart-label">{formatMonthAxis(row.month)}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+            <p className="chart-note">棒の高さは各月の送信回数です。棒を選ぶと日別表示へ切り替わります。</p>
+          </section>
+
+          <aside className="panel summary-panel">
+            <div className="panel-heading summary-heading"><h2>{selected ? formatMonth(selected.month) : "選択月"}のサマリー</h2></div>
+            <div className="summary-main-grid">
+              <MetricCard label="送信回数（全体）" value={numberFormatter.format(messageCount(selected, "all"))} note="音声会話を含む送信回数" />
+              <MetricCard label="音声を除く送信回数" value={numberFormatter.format(messageCount(selected, "nonVoice"))} note="音声会話と識別した発話を除外" />
+              <MetricCard label="音声のみ送信回数" value={numberFormatter.format(messageCount(selected, "voice"))} note="音声会話として識別できた発話" />
+              <MetricCard label={`前月差（${countModes[countMode].label}）`} value={selectedDelta.value} note="現在の集計対象で前月と比較" accent={selectedDelta.className === "positive"} />
+            </div>
+            <div className="summary-small-grid">
+              <MetricCard compact label="送信があった日数" value={`${selectedActiveDays}`} note={`活動日数（${countModes[countMode].label}）`} />
+              <MetricCard compact label="1日平均（すべて）" value={decimalFormatter.format(selectedAverage)} note="活動日数あたりの送信回数" />
+              <MetricCard compact label="最大日" value={dayPeak ? formatDate(dayPeak.date) : "-"} note="1日の最大送信回数" />
+            </div>
+          </aside>
+        </section>
+
+        <section id="daily" className="panel daily-panel">
+          <div className="panel-heading daily-heading">
+            <div>
+              <h2>{selected ? formatMonth(selected.month) : "選択月"}の日別送信回数 <span className="info-dot">i</span></h2>
+              <p>日ごとの送信回数を確認できます（{countModes[countMode].label}）</p>
+            </div>
+            <div id="filters" className="mode-switch" role="group" aria-label="集計対象">
+              {(Object.keys(countModes) as CountMode[]).map((mode) => (
+                <button key={mode} type="button" className={countMode === mode ? "active" : ""} aria-pressed={countMode === mode} onClick={() => setCountMode(mode)}>{countModes[mode].label}</button>
+              ))}
+            </div>
+            <span className="chart-icon"><Icon name="chart" size={20} /></span>
+          </div>
+          <div className="daily-scroll">
+            <div className="axis-chart daily-axis-chart" aria-label={`${selected ? formatMonth(selected.month) : "選択月"}の日別送信回数`}>
+              <div className="y-axis">
+                {[...dailyTicks].reverse().map((tick) => <span key={tick}>{numberFormatter.format(tick)}</span>)}
+              </div>
+              <div className="plot daily-plot">
+                {[...dailyTicks].reverse().map((tick, index) => <i key={tick} style={{ top: `${index * 25}%` }} />)}
+                <div className="daily-bars">
+                  {selectedDays.map((row) => (
+                    <div key={row.date} title={`${row.date}: ${numberFormatter.format(row.display_messages)}回`}>
+                      <span className="chart-value">{numberFormatter.format(row.display_messages)}</span>
+                      <span className="bar-shell"><span className="bar-fill" style={{ height: `${Math.max(1, (row.display_messages / dailyMaximum) * 100)}%` }} /></span>
+                      <span className="chart-label">{String(row.day).padStart(2, "0")}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
           </div>
         </section>
-      </section>
 
-      <section className="panel section overall-section" aria-label="全期間の数値集計">
-        <div className="section-head compact">
-          <div>
-            <span className="section-kicker">ALL TIME</span>
-            <h2 className="section-title">全期間サマリー</h2>
-            <p className="section-subtitle">個人情報を含まない数値集計のみ</p>
+        <section id="reports" className="bottom-grid">
+          <section className="panel ranking-panel">
+            <div className="panel-heading compact"><h2>送信回数ランキング <span>（{selected ? formatMonth(selected.month) : "-"}）</span></h2></div>
+            <div className="ranking-table">
+              <div className="ranking-head"><span>ランク</span><span>日付</span><span>送信回数</span><span /></div>
+              {dailyRanking.map((row, index) => (
+                <div className="ranking-row" key={row.date}>
+                  <span>{index + 1}</span>
+                  <strong>{formatDateWithWeekday(row.date)}</strong>
+                  <b>{numberFormatter.format(row.display_messages)}</b>
+                  <i><span style={{ width: `${(row.display_messages / Math.max(1, dailyRanking[0]?.display_messages ?? 1)) * 100}%` }} /></i>
+                </div>
+              ))}
+            </div>
+          </section>
+
+          <section className="panel heatmap-panel">
+            <div className="panel-heading compact">
+              <h2>時間帯別の送信傾向 <span>（{selected ? formatMonth(selected.month) : "-"}）</span> <span className="info-dot">i</span></h2>
+              <p>時間帯ごとの平均送信回数（{countModes[countMode].label}）</p>
+            </div>
+            <div className="heatmap-wrap">
+              <div className="heatmap-hours">{Array.from({ length: 12 }, (_, index) => <span key={index}>{index * 2}</span>)}</div>
+              <div className="heatmap-grid">
+                {weekdays.map((weekday, weekdayIndex) => (
+                  <div className="heatmap-row" key={weekday}>
+                    <strong>{weekday}</strong>
+                    <div>{Array.from({ length: 24 }, (_, hour) => {
+                      const value = heatMap.get(`${weekdayIndex}-${hour}`) ?? 0;
+                      const opacity = value ? 0.18 + (value / heatMaximum) * 0.82 : 0.08;
+                      return <span key={hour} style={{ opacity }} title={`${weekday}曜 ${hour}時: ${numberFormatter.format(value)}回`} />;
+                    })}</div>
+                  </div>
+                ))}
+              </div>
+              <div className="heatmap-legend"><span>少ない</span>{Array.from({ length: 7 }, (_, index) => <i key={index} style={{ opacity: 0.12 + index * 0.14 }} />)}<span>多い</span></div>
+            </div>
+          </section>
+
+          <section className="panel activity-panel">
+            <div className="panel-heading compact"><h2>最近の送信アクティビティ</h2></div>
+            <div className="activity-table">
+              <div className="activity-head"><span>日時</span><span>種別</span><span>送信回数</span><span>音声割合</span><span>ステータス</span></div>
+              {recentActivity.map((row) => {
+                const voiceRatio = row.sent_messages ? (row.voice_messages / row.sent_messages) * 100 : 0;
+                return (
+                  <div className="activity-row" key={row.date}>
+                    <span>{row.date.replaceAll("-", "/")}</span>
+                    <span>{countModes[countMode].label}</span>
+                    <strong>{numberFormatter.format(row.display_messages)}</strong>
+                    <span>{decimalFormatter.format(voiceRatio)}%</span>
+                    <span className="status"><i />完了</span>
+                  </div>
+                );
+              })}
+            </div>
+            <a className="activity-link" href="#daily">送信履歴をすべて見る <span>→</span></a>
+          </section>
+        </section>
+
+        <section className="panel all-time-panel" aria-label="全期間サマリー">
+          <div className="panel-heading compact"><div><h2>全期間サマリー</h2><p>個人情報を含まない数値集計のみ</p></div></div>
+          <div className="all-time-grid">
+            <MetricCard compact label="全件" value={numberFormatter.format(data.totals.sent_messages)} note="全ユーザー送信" />
+            <MetricCard compact label="音声を除く" value={numberFormatter.format(data.totals.non_voice_messages)} note="音声会話を除外" />
+            <MetricCard compact label="音声のみ" value={numberFormatter.format(data.totals.voice_messages)} note="識別できた音声発話" />
+            <MetricCard compact label="活動日数" value={`${numberFormatter.format(data.totals.active_days)}日`} note="送信があった日" />
+            <MetricCard compact label="会話数" value={numberFormatter.format(data.totals.conversation_count)} note="重複を除く会話単位" />
+            <MetricCard compact label="推定トークン" value={numberFormatter.format(data.totals.estimated_tokens)} note="非公式の概算値" />
           </div>
-        </div>
-        <div className="overall-grid">
-          <MetricCard label="全件" value={numberFormatter.format(data.totals.sent_messages)} note="全ユーザー送信" />
-          <MetricCard label="音声を除く" value={numberFormatter.format(data.totals.non_voice_messages)} note="音声会話を除外" />
-          <MetricCard label="音声のみ" value={numberFormatter.format(data.totals.voice_messages)} note="識別できた音声発話" />
-          <MetricCard label="活動日数" value={`${numberFormatter.format(data.totals.active_days)}日`} note="送信があった日" />
-          <MetricCard label="会話数" value={numberFormatter.format(data.totals.conversation_count)} note="重複を除く会話単位" />
-          <MetricCard label="推定トークン" value={numberFormatter.format(data.totals.estimated_tokens)} note="非公式の概算値" />
-        </div>
-      </section>
+        </section>
 
-      <footer className="panel privacy-note" aria-label="集計方法">
-        <strong>この画面に会話本文・会話タイトル・IDは含まれていません。</strong>
-        <p>{data.method}</p>
-        <p>数値はChatGPT公式の利用量ではなく、エクスポートデータからローカルで算出した非公式集計です。</p>
-      </footer>
-    </main>
+        <footer id="settings" className="privacy-note">
+          <strong>この画面に会話本文・会話タイトル・IDは含まれていません。</strong>
+          <span>{data.method} 数値はChatGPT公式ではなく、エクスポートデータからローカルで算出した非公式集計です。</span>
+        </footer>
+      </main>
+    </div>
   );
 }

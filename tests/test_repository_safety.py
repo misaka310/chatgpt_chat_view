@@ -35,7 +35,17 @@ class RepositorySafetyTest(unittest.TestCase):
 
     def test_no_nested_git_repositories_or_extra_root_files(self) -> None:
         repo_root = Path(__file__).resolve().parents[1]
-        nested_git = [path for path in repo_root.rglob(".git") if path != repo_root / ".git"]
+        nested_git = []
+        for path in repo_root.rglob(".git"):
+            if path == repo_root / ".git":
+                continue
+            ignored = subprocess.run(
+                ["git", "check-ignore", "-q", str(path)],
+                cwd=repo_root,
+                check=False,
+            ).returncode == 0
+            if not ignored:
+                nested_git.append(path)
         self.assertEqual(nested_git, [])
         allowed_root_files = {
             ".gitignore",

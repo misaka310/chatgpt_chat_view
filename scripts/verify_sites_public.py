@@ -8,10 +8,11 @@ from pathlib import Path
 from typing import Any, Iterable
 
 PUBLIC_SOURCE_FILES = {"favicon.svg", "usage-data.json"}
-TOP_LEVEL_KEYS = {"schema_version", "generated_at", "timezone", "method", "totals", "monthly", "daily"}
+TOP_LEVEL_KEYS = {"schema_version", "generated_at", "timezone", "method", "totals", "monthly", "daily", "hourly_weekday"}
 TOTAL_KEYS = {"sent_messages", "non_voice_messages", "voice_messages", "active_days", "non_voice_active_days", "voice_active_days", "conversation_count", "estimated_tokens"}
 MONTH_KEYS = {"month", "sent_messages", "non_voice_messages", "voice_messages", "active_days", "non_voice_active_days", "voice_active_days", "conversation_count", "estimated_tokens"}
 DAY_KEYS = {"date", "month", "day", "sent_messages", "non_voice_messages", "voice_messages", "conversation_count", "estimated_tokens"}
+HOURLY_WEEKDAY_KEYS = {"month", "weekday", "hour", "sent_messages", "non_voice_messages", "voice_messages"}
 ALLOWED_TEXT_SUFFIXES = {".html", ".js", ".mjs", ".css", ".json", ".svg", ".txt"}
 ALLOWED_BINARY_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp", ".ico", ".woff", ".woff2"}
 ALLOWED_EXTENSIONLESS_ARTIFACTS = {"client/.assetsignore", "client/_headers", "server/BUILD_ID"}
@@ -50,7 +51,7 @@ def verify_usage_data(path: Path) -> dict[str, Any]:
         fail("public aggregate data is not valid JSON")
     if not isinstance(payload, dict) or set(payload) != TOP_LEVEL_KEYS:
         fail("public aggregate data top-level allowlist mismatch")
-    if payload.get("schema_version") != 2:
+    if payload.get("schema_version") != 3:
         fail("unsupported public aggregate schema")
     if payload.get("timezone") != "Asia/Tokyo":
         fail("unexpected public aggregate timezone")
@@ -107,6 +108,30 @@ def verify_usage_data(path: Path) -> dict[str, Any]:
             fail(f"public daily message modes do not add up at index {index}")
     if dates != sorted(set(dates)):
         fail("public daily rows are not unique and sorted")
+
+    hourly_weekday = payload.get("hourly_weekday")
+    if not isinstance(hourly_weekday, list):
+        fail("public hourly weekday rows are invalid")
+    hourly_keys: list[tuple[str, int, int]] = []
+    for index, row in enumerate(hourly_weekday):
+        if not isinstance(row, dict) or set(row) != HOURLY_WEEKDAY_KEYS:
+            fail(f"public hourly weekday row allowlist mismatch at index {index}")
+        month = row.get("month")
+        weekday = row.get("weekday")
+        hour = row.get("hour")
+        if month not in months:
+            fail(f"invalid public hourly weekday month at index {index}")
+        if not isinstance(weekday, int) or isinstance(weekday, bool) or weekday < 0 or weekday > 6:
+            fail(f"invalid public weekday at index {index}")
+        if not isinstance(hour, int) or isinstance(hour, bool) or hour < 0 or hour > 23:
+            fail(f"invalid public hour at index {index}")
+        for key in HOURLY_WEEKDAY_KEYS - {"month", "weekday", "hour"}:
+            non_negative_int(row.get(key), f"hourly_weekday[{index}].{key}")
+        if row["sent_messages"] != row["non_voice_messages"] + row["voice_messages"]:
+            fail(f"public hourly weekday message modes do not add up at index {index}")
+        hourly_keys.append((month, weekday, hour))
+    if hourly_keys != sorted(set(hourly_keys)):
+        fail("public hourly weekday rows are not unique and sorted")
 
     if totals["sent_messages"] != totals["non_voice_messages"] + totals["voice_messages"]:
         fail("public total message modes do not add up")

@@ -34,7 +34,7 @@ test("server-renders the private aggregate dashboard shell", async () => {
   assert.doesNotMatch(html, /codex-preview|Your site is taking shape|react-loading-skeleton/i);
 });
 
-test("keeps the public source surface minimal, responsive, and local-only", async () => {
+test("keeps the public source surface minimal, reference-aligned, responsive, and local-only", async () => {
   const [page, layout, css, packageJson, publicFiles] = await Promise.all([
     readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/layout.tsx", import.meta.url), "utf8"),
@@ -45,37 +45,42 @@ test("keeps the public source surface minimal, responsive, and local-only", asyn
 
   assert.deepEqual(publicFiles.sort(), ["favicon.svg", "usage-data.json"]);
   assert.match(page, /fetch\("\/usage-data\.json"/);
+  assert.match(page, /送信分析ダッシュボード/);
   assert.match(page, /月ごとの送信回数/);
   assert.match(page, /日別送信回数/);
-  assert.match(page, /選択月サマリー/);
+  assert.match(page, /のサマリー/);
   assert.match(page, /送信回数ランキング/);
-  assert.match(page, /月別ランキング/);
-  assert.match(page, /最近の活動日/);
+  assert.match(page, /時間帯別の送信傾向/);
+  assert.match(page, /最近の送信アクティビティ/);
   assert.match(page, /全期間サマリー/);
   assert.match(page, /音声を除く/);
   assert.match(page, /音声のみ/);
   assert.match(page, /前月差/);
-  assert.match(page, /活動日数/);
+  assert.match(page, /送信があった日数/);
   assert.match(page, /1日平均/);
-  assert.match(page, /会話数/);
-  assert.match(page, /推定トークン/);
-  assert.match(page, /最大/);
-  assert.match(page, /最小/);
-  assert.match(page, /31日すべてを横スクロールなし/);
+  assert.match(page, /最大日/);
+  assert.match(page, /エクスポート/);
+  assert.match(page, /ダッシュボード/);
+  assert.match(page, /キャンペーン/);
+  assert.match(page, /送信履歴/);
+  assert.match(page, /レポート/);
+  assert.match(page, /設定/);
+  assert.match(page, /hourly_weekday/);
   assert.doesNotMatch(page, /3時間|gpt_3h/i);
   assert.doesNotMatch(page, /https?:\/\/|chatgpt-usage-dashboard-33/i);
-  assert.doesNotMatch(page, /ダウンロード|時間帯|ヒートマップ|conversation_id|message_id|node_id/i);
+  assert.doesNotMatch(page, /conversation_id|message_id|node_id/i);
   assert.doesNotMatch(layout, /next\/font|codex-preview|_sites-preview|chatgpt-usage-dashboard-33/i);
   assert.doesNotMatch(packageJson, /react-loading-skeleton|drizzle/i);
   assert.match(css, /font-family:[^;]*Noto Sans JP/);
   assert.match(css, /overflow-x: clip/);
-  assert.match(css, /grid-template-columns: repeat\(12, minmax\(0, 1fr\)\)/);
-  assert.match(css, /--daily-columns: 16/);
-  assert.match(css, /--daily-columns: 8/);
-  assert.match(css, /--daily-columns: 4/);
-  assert.match(css, /@media \(max-width: 820px\)/);
-  assert.match(css, /@media \(max-width: 620px\)/);
-  assert.match(css, /@media \(max-width: 390px\)/);
+  assert.match(css, /grid-template-columns: 96px minmax\(0, 1fr\)/);
+  assert.match(css, /grid-template-columns: minmax\(0, 1\.58fr\) minmax\(480px, 1fr\)/);
+  assert.match(css, /grid-template-columns: repeat\(11, minmax\(0, 1fr\)\)/);
+  assert.match(css, /grid-template-columns: repeat\(31, minmax\(0, 1fr\)\)/);
+  assert.match(css, /grid-template-columns: minmax\(345px, 0\.95fr\)/);
+  assert.match(css, /@media \(max-width: 1180px\)/);
+  assert.match(css, /@media \(max-width: 760px\)/);
+  assert.match(css, /@media \(max-width: 430px\)/);
   assert.match(css, /user-select: none/);
   assert.doesNotMatch(css, /@import|url\(https?:/i);
 });
