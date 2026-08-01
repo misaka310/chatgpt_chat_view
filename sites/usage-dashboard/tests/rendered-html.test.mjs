@@ -61,7 +61,10 @@ test("keeps the public source surface minimal and local-only", async () => {
   assert.match(css, /@media \(max-width: 820px\)/);
   assert.match(css, /@media \(max-width: 560px\)/);
   assert.match(css, /Noto Sans JP/);
-  assert.match(page, /--daily-min-width/);
-  assert.match(css, /minmax\(36px, 1fr\)/);
+  assert.match(page, /横スクロールせず月全体/);
+  assert.match(css, /--daily-columns: 16/);
+  assert.match(css, /--daily-columns: 8/);
+  assert.match(css, /flex-wrap: wrap/);
+  assert.match(css, /order: -1/);
   assert.match(css, /user-select: none/);
 });

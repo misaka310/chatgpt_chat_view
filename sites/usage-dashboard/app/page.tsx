@@ -338,7 +338,7 @@ export default function Home() {
           <div className="section-head">
             <div>
               <h2 className="section-title">月別一覧</h2>
-              <p className="section-subtitle">月を選ぶと右側または下の日別推移も連動します</p>
+              <p className="section-subtitle">月を選ぶと上の日別推移も連動します</p>
             </div>
           </div>
           <div className="monthly-list" role="table" aria-label="月別集計一覧">
@@ -374,17 +374,11 @@ export default function Home() {
           <div className="section-head">
             <div>
               <h2 className="section-title">{selected ? `${formatMonth(selected.month)}の日別送信回数` : "選択月の日別送信回数"}</h2>
-              <p className="section-subtitle">日ごとの送信回数を確認できます（{countModes[countMode].label}）</p>
+              <p className="section-subtitle">日ごとの送信回数を、横スクロールせず月全体で確認できます（{countModes[countMode].label}）</p>
             </div>
           </div>
           <div className="chart-scroll daily-scroll">
-            <div
-              className="bar-chart daily-chart"
-              style={{
-                "--day-count": selectedDays.length,
-                "--daily-min-width": `${Math.max(1, selectedDays.length) * 42}px`,
-              } as React.CSSProperties}
-            >
+            <div className="bar-chart daily-chart" role="list" aria-label={`${selected ? formatMonth(selected.month) : "選択月"}の日別送信回数`}>
               {selectedDays.map((row) => {
                 const height = Math.max(4, (row.display_messages / dayMaximum) * 100);
                 return (

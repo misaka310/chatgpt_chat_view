@@ -197,7 +197,11 @@ h1 {
 }
 
 .grid-bottom {
-  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+  grid-template-columns: 1fr;
+}
+
+.grid-bottom > .panel:nth-child(2) {
+  order: -1;
 }
 
 .section-head {
@@ -285,9 +289,12 @@ h1 {
 }
 
 .daily-chart {
-  grid-template-columns: repeat(var(--day-count, 31), minmax(36px, 1fr));
-  min-width: max(100%, var(--daily-min-width, 1302px));
-  gap: 6px;
+  --daily-columns: 16;
+  --daily-gap: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px var(--daily-gap);
+  align-items: stretch;
 }
 
 .monthly-chart,
@@ -309,8 +316,10 @@ h1 {
 }
 
 .bar-item.daily {
-  min-height: 246px;
-  grid-template-rows: auto minmax(180px, 1fr) auto;
+  flex: 1 1 calc((100% - (var(--daily-columns) - 1) * var(--daily-gap)) / var(--daily-columns));
+  min-width: 0;
+  min-height: 224px;
+  grid-template-rows: auto minmax(158px, 1fr) auto;
   cursor: default;
 }
 
@@ -346,8 +355,17 @@ h1 {
 }
 
 .bar-item.daily .bar-track {
-  min-height: 188px;
+  min-height: 158px;
   padding-inline: 4px;
+}
+
+.daily-scroll {
+  overflow: visible;
+  padding-bottom: 0;
+}
+
+.grid-bottom > .panel:nth-child(2) {
+  overflow: hidden;
 }
 
 .bar-fill {
@@ -626,6 +644,21 @@ h1 {
     gap: 7px;
   }
 
+  .daily-chart {
+    --daily-columns: 8;
+    --daily-gap: 6px;
+    gap-block: 12px;
+  }
+
+  .bar-item.daily {
+    min-height: 174px;
+    grid-template-rows: auto minmax(116px, 1fr) auto;
+  }
+
+  .bar-item.daily .bar-track {
+    min-height: 116px;
+  }
+
   .summary-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -758,10 +791,6 @@ h1 {
 
   .bar-track {
     min-height: 145px;
-  }
-
-  .daily-chart {
-    min-width: max(100%, var(--daily-min-width, 1302px));
   }
 
   .daily-stat {
