@@ -378,7 +378,13 @@ export default function Home() {
             </div>
           </div>
           <div className="chart-scroll daily-scroll">
-            <div className="bar-chart daily-chart" style={{ "--day-count": selectedDays.length } as React.CSSProperties}>
+            <div
+              className="bar-chart daily-chart"
+              style={{
+                "--day-count": selectedDays.length,
+                "--daily-min-width": `${Math.max(1, selectedDays.length) * 42}px`,
+              } as React.CSSProperties}
+            >
               {selectedDays.map((row) => {
                 const height = Math.max(4, (row.display_messages / dayMaximum) * 100);
                 return (

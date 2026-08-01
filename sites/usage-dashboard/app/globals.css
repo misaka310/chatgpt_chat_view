@@ -285,8 +285,14 @@ h1 {
 }
 
 .daily-chart {
-  grid-template-columns: repeat(var(--day-count, 31), minmax(0, 1fr));
-  min-width: 760px;
+  grid-template-columns: repeat(var(--day-count, 31), minmax(36px, 1fr));
+  min-width: max(100%, var(--daily-min-width, 1302px));
+  gap: 6px;
+}
+
+.monthly-chart,
+.daily-chart {
+  user-select: none;
 }
 
 .bar-item {
@@ -319,7 +325,9 @@ h1 {
 }
 
 .bar-item.daily .bar-value {
-  font-size: 0.68rem;
+  overflow: visible;
+  font-size: 0.72rem;
+  white-space: nowrap;
 }
 
 .bar-track {
@@ -753,7 +761,7 @@ h1 {
   }
 
   .daily-chart {
-    min-width: 720px;
+    min-width: max(100%, var(--daily-min-width, 1302px));
   }
 
   .daily-stat {
