@@ -135,7 +135,8 @@ class SitesDashboardTest(unittest.TestCase):
             self.assertEqual(build.returncode, 0, msg=build.stderr)
 
             payload = json.loads(data_file.read_text(encoding="utf-8"))
-            self.assertEqual(payload["schema_version"], 2)
+            self.assertEqual(payload["schema_version"], 3)
+            self.assertEqual(payload["hourly_weekday"], [])
             self.assertEqual(payload["totals"]["sent_messages"], 17)
             self.assertEqual(payload["totals"]["non_voice_messages"], 13)
             self.assertEqual(payload["totals"]["voice_messages"], 4)

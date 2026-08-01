@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import calendar
+import csv
 import json
 from datetime import date
 from pathlib import Path
@@ -32,6 +33,14 @@ DAY_KEYS = {
     "voice_messages",
     "conversation_count",
     "estimated_tokens",
+}
+HOURLY_WEEKDAY_KEYS = {
+    "month",
+    "weekday",
+    "hour",
+    "sent_messages",
+    "non_voice_messages",
+    "voice_messages",
 }
 
 
@@ -131,7 +140,71 @@ def validate_aggregate_consistency(
                 )
 
 
-def build_public_payload(summary: dict[str, Any], daily: dict[str, Any]) -> dict[str, Any]:
+def build_hourly_weekday_rows(path: Path, months: set[str]) -> list[dict[str, Any]]:
+    if not path.is_file():
+        return []
+
+    totals: dict[tuple[str, int, int], dict[str, int]] = {}
+    with path.open("r", encoding="utf-8-sig", newline="") as handle:
+        reader = csv.DictReader(handle)
+        required = {
+            "date",
+            "hour",
+            "all_messages",
+            "non_voice_messages",
+            "voice_messages",
+        }
+        if not reader.fieldnames or not required.issubset(reader.fieldnames):
+            raise SystemExit("invalid hourly aggregate CSV header")
+
+        for raw in reader:
+            date_text = valid_date(raw.get("date"))
+            month = date_text[:7]
+            if month not in months:
+                continue
+            hour = as_non_negative_int(raw.get("hour"), "hourly hour")
+            if hour > 23:
+                raise SystemExit("invalid hour in hourly aggregate CSV")
+            sent = as_non_negative_int(raw.get("all_messages"), "hourly all messages")
+            non_voice = as_non_negative_int(raw.get("non_voice_messages"), "hourly non-voice messages")
+            voice = as_non_negative_int(raw.get("voice_messages"), "hourly voice messages")
+            if sent != non_voice + voice:
+                raise SystemExit(f"hourly message modes do not add up for {date_text} {hour}")
+
+            key = (month, date.fromisoformat(date_text).weekday(), hour)
+            current = totals.setdefault(
+                key,
+                {"sent_messages": 0, "non_voice_messages": 0, "voice_messages": 0},
+            )
+            current["sent_messages"] += sent
+            current["non_voice_messages"] += non_voice
+            current["voice_messages"] += voice
+
+    rows: list[dict[str, Any]] = []
+    for month in sorted(months):
+        for weekday in range(7):
+            for hour in range(24):
+                counts = totals.get(
+                    (month, weekday, hour),
+                    {"sent_messages": 0, "non_voice_messages": 0, "voice_messages": 0},
+                )
+                row = {
+                    "month": month,
+                    "weekday": weekday,
+                    "hour": hour,
+                    **counts,
+                }
+                if set(row) != HOURLY_WEEKDAY_KEYS:
+                    raise AssertionError("hourly weekday allowlist mismatch")
+                rows.append(row)
+    return rows
+
+
+def build_public_payload(
+    summary: dict[str, Any],
+    daily: dict[str, Any],
+    hourly_weekday_rows: list[dict[str, Any]],
+) -> dict[str, Any]:
     summary_meta = summary.get("meta") if isinstance(summary.get("meta"), dict) else {}
     daily_meta = daily.get("meta") if isinstance(daily.get("meta"), dict) else {}
     stats = summary_meta.get("stats") if isinstance(summary_meta.get("stats"), dict) else {}
@@ -206,7 +279,7 @@ def build_public_payload(summary: dict[str, Any], daily: dict[str, Any]) -> dict
     validate_aggregate_consistency(monthly_rows, daily_rows)
 
     return {
-        "schema_version": 2,
+        "schema_version": 3,
         "generated_at": generated_at,
         "timezone": timezone,
         "method": METHOD_NOTE,
@@ -222,6 +295,7 @@ def build_public_payload(summary: dict[str, Any], daily: dict[str, Any]) -> dict
         },
         "monthly": monthly_rows,
         "daily": daily_rows,
+        "hourly_weekday": hourly_weekday_rows,
     }
 
 
@@ -254,10 +328,18 @@ def main() -> int:
     private_output_dir = args.private_output_dir.resolve()
     summary = load_json(private_output_dir / "dashboard_summary.json")
     daily = load_json(private_output_dir / "dashboard_daily.json")
-    payload = build_public_payload(summary, daily)
+    payload = build_public_payload(summary, daily, [])
+    months = {row["month"] for row in payload["monthly"]}
+    payload["hourly_weekday"] = build_hourly_weekday_rows(
+        private_output_dir / "daily_hourly_user_messages_by_mode.csv",
+        months,
+    )
     changed = write_if_changed(args.data_file.resolve(), payload)
     print("Sites aggregate data updated." if changed else "Sites aggregate data is unchanged.")
-    print(f"Monthly rows: {len(payload['monthly'])}; daily rows: {len(payload['daily'])}")
+    print(
+        f"Monthly rows: {len(payload['monthly'])}; daily rows: {len(payload['daily'])}; "
+        f"hourly weekday rows: {len(payload['hourly_weekday'])}"
+    )
     return 0
 
 
