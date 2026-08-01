@@ -34,7 +34,7 @@ test("server-renders the private aggregate dashboard shell", async () => {
   assert.doesNotMatch(html, /codex-preview|Your site is taking shape|react-loading-skeleton/i);
 });
 
-test("keeps the public source surface minimal and local-only", async () => {
+test("keeps the public source surface minimal, responsive, and local-only", async () => {
   const [page, layout, css, packageJson, publicFiles] = await Promise.all([
     readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/layout.tsx", import.meta.url), "utf8"),
@@ -48,23 +48,34 @@ test("keeps the public source surface minimal and local-only", async () => {
   assert.match(page, /月ごとの送信回数/);
   assert.match(page, /日別送信回数/);
   assert.match(page, /選択月サマリー/);
+  assert.match(page, /送信回数ランキング/);
+  assert.match(page, /月別ランキング/);
+  assert.match(page, /最近の活動日/);
   assert.match(page, /全期間サマリー/);
   assert.match(page, /音声を除く/);
   assert.match(page, /音声のみ/);
+  assert.match(page, /前月差/);
+  assert.match(page, /活動日数/);
   assert.match(page, /1日平均/);
+  assert.match(page, /会話数/);
+  assert.match(page, /推定トークン/);
   assert.match(page, /最大/);
   assert.match(page, /最小/);
+  assert.match(page, /31日すべてを横スクロールなし/);
   assert.doesNotMatch(page, /3時間|gpt_3h/i);
   assert.doesNotMatch(page, /https?:\/\/|chatgpt-usage-dashboard-33/i);
+  assert.doesNotMatch(page, /ダウンロード|時間帯|ヒートマップ|conversation_id|message_id|node_id/i);
   assert.doesNotMatch(layout, /next\/font|codex-preview|_sites-preview|chatgpt-usage-dashboard-33/i);
   assert.doesNotMatch(packageJson, /react-loading-skeleton|drizzle/i);
-  assert.match(css, /@media \(max-width: 820px\)/);
-  assert.match(css, /@media \(max-width: 560px\)/);
-  assert.match(css, /Noto Sans JP/);
-  assert.match(page, /横スクロールせず月全体/);
+  assert.match(css, /font-family:[^;]*Noto Sans JP/);
+  assert.match(css, /overflow-x: clip/);
+  assert.match(css, /grid-template-columns: repeat\(12, minmax\(0, 1fr\)\)/);
   assert.match(css, /--daily-columns: 16/);
   assert.match(css, /--daily-columns: 8/);
-  assert.match(css, /flex-wrap: wrap/);
-  assert.match(css, /order: -1/);
+  assert.match(css, /--daily-columns: 4/);
+  assert.match(css, /@media \(max-width: 820px\)/);
+  assert.match(css, /@media \(max-width: 620px\)/);
+  assert.match(css, /@media \(max-width: 390px\)/);
   assert.match(css, /user-select: none/);
+  assert.doesNotMatch(css, /@import|url\(https?:/i);
 });
