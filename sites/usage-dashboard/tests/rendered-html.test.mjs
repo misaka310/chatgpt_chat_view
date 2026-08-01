@@ -28,7 +28,7 @@ test("server-renders the private aggregate dashboard shell", async () => {
 
   const html = await response.text();
   assert.match(html, /<html lang="ja">/i);
-  assert.match(html, /<title>ChatGPT 利用集計<\/title>/i);
+  assert.match(html, /<title>ChatGPT 利用ダッシュボード<\/title>/i);
   assert.match(html, /会話本文を含まない集計データを読み込んでいます/);
   assert.match(html, /name="robots" content="noindex, nofollow, nocache"/i);
   assert.doesNotMatch(html, /codex-preview|Your site is taking shape|react-loading-skeleton/i);
@@ -45,16 +45,20 @@ test("keeps the public source surface minimal and local-only", async () => {
 
   assert.deepEqual(publicFiles.sort(), ["favicon.svg", "usage-data.json"]);
   assert.match(page, /fetch\("\/usage-data\.json"/);
-  assert.match(page, /月別の送信回数/);
+  assert.match(page, /月ごとの送信回数/);
   assert.match(page, /日別送信回数/);
-  assert.match(page, /全期間・全件/);
+  assert.match(page, /選択月サマリー/);
+  assert.match(page, /全期間サマリー/);
   assert.match(page, /音声を除く/);
   assert.match(page, /音声のみ/);
-  assert.match(page, /日平均/);
+  assert.match(page, /1日平均/);
   assert.match(page, /最大/);
   assert.match(page, /最小/);
-  assert.doesNotMatch(page, /https?:\/\//i);
-  assert.doesNotMatch(layout, /next\/font|codex-preview|_sites-preview/i);
+  assert.doesNotMatch(page, /3時間|gpt_3h/i);
+  assert.doesNotMatch(page, /https?:\/\/|chatgpt-usage-dashboard-33/i);
+  assert.doesNotMatch(layout, /next\/font|codex-preview|_sites-preview|chatgpt-usage-dashboard-33/i);
   assert.doesNotMatch(packageJson, /react-loading-skeleton|drizzle/i);
-  assert.match(css, /@media \(max-width: 720px\)/);
+  assert.match(css, /@media \(max-width: 820px\)/);
+  assert.match(css, /@media \(max-width: 560px\)/);
+  assert.match(css, /Noto Sans JP/);
 });

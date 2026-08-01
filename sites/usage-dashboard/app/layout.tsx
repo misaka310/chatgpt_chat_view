@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "ChatGPT 利用集計",
+  title: "ChatGPT 利用ダッシュボード",
   description: "ChatGPTエクスポートからローカル生成した匿名の月別・日別利用集計です。",
   icons: {
     icon: "/favicon.svg",
