@@ -22,10 +22,15 @@ REQUIRED_OUTPUTS = (
     "dashboard.html",
     "dashboard_summary.json",
     "dashboard_daily.json",
+    "monthly_user_messages_by_mode.csv",
+    "daily_user_messages_by_mode.csv",
+    "daily_hourly_user_messages_by_mode.csv",
     "gpt_3h_limit.html",
     "gpt_3h_limit_summary.json",
+    "favicon.svg",
 )
 PIPELINE_FILES = (
+    Path(__file__).resolve(),
     SRC_DIR / "analyze_chat_export.py",
     SRC_DIR / "analyze_chat_export_public.py",
     SRC_DIR / "analyze_gpt_3h_limit.py",
@@ -35,6 +40,7 @@ PIPELINE_FILES = (
     REPO_ROOT / "scripts" / "patch_3h_html.py",
     REPO_ROOT / "scripts" / "inject_3h_into_dashboard.py",
     REPO_ROOT / "scripts" / "patch_dashboard_daily_chart.py",
+    REPO_ROOT / "requirements.txt",
 )
 
 sys.path.insert(0, str(SCRIPTS_DIR))

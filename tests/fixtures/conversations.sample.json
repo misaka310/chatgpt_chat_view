@@ -90,7 +90,8 @@
           "id": "m10",
           "author": { "role": "user" },
           "create_time": 1706745600,
-          "content": { "parts": ["音声生成ツールの比較をしたい"] }
+          "content": { "parts": ["音声生成ツールの比較をしたい"] },
+          "metadata": { "bidi_voice_mode_message": true }
         }
       },
       "a2": {

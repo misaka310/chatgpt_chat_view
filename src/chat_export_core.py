@@ -155,6 +155,31 @@ def extract_message_text(message: dict) -> str:
     return extract_text_from_content(message.get("content"))
 
 
+def _contains_voice_transcription(value: Any) -> bool:
+    if isinstance(value, dict):
+        content_type = str(value.get("content_type") or "").strip().lower()
+        direction = str(value.get("direction") or "").strip().lower()
+        if content_type == "audio_transcription" and direction != "out":
+            return True
+        parts = value.get("parts")
+        if isinstance(parts, list):
+            return any(_contains_voice_transcription(part) for part in parts)
+    elif isinstance(value, list):
+        return any(_contains_voice_transcription(part) for part in value)
+    return False
+
+
+def is_voice_message(message: dict) -> bool:
+    """Return True for user-side GPT Live / bidirectional voice messages."""
+    metadata = message.get("metadata")
+    if isinstance(metadata, dict) and (
+        metadata.get("bidi_voice_mode_message")
+        or metadata.get("bidi_voice_fem_message")
+    ):
+        return True
+    return _contains_voice_transcription(message.get("content"))
+
+
 def normalize_text(value: str) -> str:
     return re.sub(r"\s+", " ", value or "").strip().lower()
 

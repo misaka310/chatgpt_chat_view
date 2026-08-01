@@ -39,6 +39,9 @@ class StartDashboardTest(unittest.TestCase):
                 self.module, "STATE_PATH", state_path
             ):
                 self.assertTrue(self.module.analysis_is_current(state))
+                (output_dir / "favicon.svg").unlink()
+                self.assertFalse(self.module.analysis_is_current(state))
+                (output_dir / "favicon.svg").write_text("ok", encoding="utf-8")
                 source.write_text("[{}]", encoding="utf-8")
                 changed = {
                     "version": 1,
