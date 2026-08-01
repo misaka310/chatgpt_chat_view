@@ -15,6 +15,7 @@ from chat_export_core import (
     detect_inputs,
     ensure_timezone,
     extract_message_text,
+    is_voice_message,
     normalize_role,
     pick_timestamp,
     safe_title,
@@ -71,15 +72,23 @@ def choose_title(current: str, candidate: str) -> str:
 def collect_stats(paths: Iterable[Path], marker: Optional[str], local_tz) -> dict:
     estimate_tokens, token_method = build_token_estimator()
     monthly_user: Counter[str] = Counter()
+    monthly_voice_user: Counter[str] = Counter()
+    monthly_non_voice_user: Counter[str] = Counter()
     monthly_conv_ids: dict[str, set[str]] = defaultdict(set)
     monthly_active_days: dict[str, set[str]] = defaultdict(set)
+    monthly_voice_active_days: dict[str, set[str]] = defaultdict(set)
+    monthly_non_voice_active_days: dict[str, set[str]] = defaultdict(set)
     monthly_daily_user_counts: dict[str, Counter[int]] = defaultdict(Counter)
     monthly_role_counts: dict[str, Counter[str]] = defaultdict(Counter)
     monthly_role_tokens: dict[str, Counter[str]] = defaultdict(Counter)
     daily_user: Counter[str] = Counter()
+    daily_voice_user: Counter[str] = Counter()
+    daily_non_voice_user: Counter[str] = Counter()
     daily_conv_ids: dict[str, set[str]] = defaultdict(set)
     daily_tokens: Counter[str] = Counter()
     daily_hourly: Counter[tuple[str, int]] = Counter()
+    daily_hourly_voice: Counter[tuple[str, int]] = Counter()
+    daily_hourly_non_voice: Counter[tuple[str, int]] = Counter()
     daily_conv_user_counts: dict[str, Counter[str]] = defaultdict(Counter)
     conversation_stats: dict[str, dict] = {}
     conv_titles: dict[str, str] = {}
@@ -98,7 +107,18 @@ def collect_stats(paths: Iterable[Path], marker: Optional[str], local_tz) -> dic
             conv_titles[conv_id] = choose_title(conv_titles.get(conv_id, ""), title)
             stats = conversation_stats.setdefault(
                 conv_id,
-                {"conversation_id": conv_id, "title": conv_titles[conv_id], "first_ts": None, "last_ts": None, "user": 0, "assistant": 0, "total": 0, "active_days": set()},
+                {
+                    "conversation_id": conv_id,
+                    "title": conv_titles[conv_id],
+                    "first_ts": None,
+                    "last_ts": None,
+                    "user": 0,
+                    "voice_user": 0,
+                    "non_voice_user": 0,
+                    "assistant": 0,
+                    "total": 0,
+                    "active_days": set(),
+                },
             )
             stats["title"] = conv_titles[conv_id]
             mapping = conversation.get("mapping")
@@ -113,6 +133,7 @@ def collect_stats(paths: Iterable[Path], marker: Optional[str], local_tz) -> dic
                 author = message.get("author") or {}
                 role = normalize_role(author.get("role") if isinstance(author, dict) else None)
                 text = extract_message_text(message)
+                voice_user = role == "user" and is_voice_message(message)
                 key = build_message_dedupe_key(conv_id, message, role, text)
                 if key in seen_keys:
                     duplicate_messages += 1
@@ -122,6 +143,10 @@ def collect_stats(paths: Iterable[Path], marker: Optional[str], local_tz) -> dic
                 stats["total"] += 1
                 if role == "user":
                     stats["user"] += 1
+                    if voice_user:
+                        stats["voice_user"] += 1
+                    else:
+                        stats["non_voice_user"] += 1
                 elif role == "assistant":
                     stats["assistant"] += 1
                 ts = pick_timestamp(message)
@@ -147,6 +172,16 @@ def collect_stats(paths: Iterable[Path], marker: Optional[str], local_tz) -> dic
                     daily_user[day] += 1
                     daily_conv_ids[day].add(conv_id)
                     daily_hourly[(day, hour)] += 1
+                    if voice_user:
+                        monthly_voice_user[month] += 1
+                        monthly_voice_active_days[month].add(day)
+                        daily_voice_user[day] += 1
+                        daily_hourly_voice[(day, hour)] += 1
+                    else:
+                        monthly_non_voice_user[month] += 1
+                        monthly_non_voice_active_days[month].add(day)
+                        daily_non_voice_user[day] += 1
+                        daily_hourly_non_voice[(day, hour)] += 1
                     daily_conv_user_counts[day][conv_id] += 1
 
     months = sorted(set(monthly_user) | set(monthly_conv_ids) | set(monthly_role_counts))
@@ -158,6 +193,10 @@ def collect_stats(paths: Iterable[Path], marker: Optional[str], local_tz) -> dic
         role_tokens = monthly_role_tokens.get(month, Counter())
         user_count = int(monthly_user.get(month, 0))
         active_days = len(monthly_active_days.get(month, set()))
+        voice_count = int(monthly_voice_user[month])
+        non_voice_count = int(monthly_non_voice_user[month])
+        voice_days = len(monthly_voice_active_days[month])
+        non_voice_days = len(monthly_non_voice_active_days[month])
         total_days = month_days(month)
         last_data_day = max(monthly_daily_user_counts.get(month, Counter()).keys(), default=0)
         elapsed_days = last_data_day if month == latest_month and 0 < last_data_day < total_days else total_days
@@ -176,6 +215,8 @@ def collect_stats(paths: Iterable[Path], marker: Optional[str], local_tz) -> dic
             "month": month,
             "year": month[:4],
             "user_messages": user_count,
+            "non_voice_messages": non_voice_count,
+            "voice_messages": voice_count,
             "assistant_messages": int(role_counts.get("assistant", 0)),
             "system_messages": int(role_counts.get("system", 0)),
             "tool_messages": int(role_counts.get("tool", 0)),
@@ -184,6 +225,10 @@ def collect_stats(paths: Iterable[Path], marker: Optional[str], local_tz) -> dic
             "conversations": int(len(monthly_conv_ids.get(month, set()))),
             "active_days": int(active_days),
             "user_tokens_est": user_tokens,
+            "non_voice_active_days": int(non_voice_days),
+            "voice_active_days": int(voice_days),
+            "avg_non_voice_per_active_day": float(non_voice_count / non_voice_days) if non_voice_days else 0.0,
+            "avg_voice_per_active_day": float(voice_count / voice_days) if voice_days else 0.0,
             "assistant_tokens_est": int(role_tokens.get("assistant", 0)),
             "system_tokens_est": int(role_tokens.get("system", 0)),
             "tool_tokens_est": int(role_tokens.get("tool", 0)),
@@ -202,6 +247,14 @@ def collect_stats(paths: Iterable[Path], marker: Optional[str], local_tz) -> dic
     days = sorted(daily_user.keys())
     daily_rows = [{"date": day, "year": day[:4], "month": day[:7], "day": int(day[8:10]), "weekday": datetime.strptime(day, "%Y-%m-%d").weekday(), "user_messages": int(daily_user[day]), "conversations": int(len(daily_conv_ids.get(day, set()))), "total_tokens_est": int(daily_tokens.get(day, 0))} for day in days]
     daily_hourly_rows = [{"date": day, "hour": hour, "user_messages": int(daily_hourly.get((day, hour), 0))} for day in days for hour in range(24)]
+    for row in daily_rows:
+        day = row["date"]
+        row["non_voice_messages"] = int(daily_non_voice_user[day])
+        row["voice_messages"] = int(daily_voice_user[day])
+    for row in daily_hourly_rows:
+        key = (row["date"], row["hour"])
+        row["non_voice_messages"] = int(daily_hourly_non_voice[key])
+        row["voice_messages"] = int(daily_hourly_voice[key])
     daily_top_rows = []
     for day in days:
         for rank, (conv_id, count) in enumerate(daily_conv_user_counts.get(day, Counter()).most_common(20), start=1):
@@ -211,6 +264,10 @@ def collect_stats(paths: Iterable[Path], marker: Optional[str], local_tz) -> dic
     for conv_id, stats in conversation_stats.items():
         conversation_index.append({"conversation_id": conv_id, "title": conv_titles.get(conv_id, stats["title"]), "first_message_at": iso_from_timestamp(stats["first_ts"], local_tz), "last_message_at": iso_from_timestamp(stats["last_ts"], local_tz), "user_message_count": int(stats["user"]), "assistant_message_count": int(stats["assistant"]), "total_message_count": int(stats["total"]), "active_days": len(stats["active_days"]), "inferred_category": "", "top_keywords": []})
 
+    for row in conversation_index:
+        stats = conversation_stats[row["conversation_id"]]
+        row["non_voice_message_count"] = int(stats["non_voice_user"])
+        row["voice_message_count"] = int(stats["voice_user"])
     return {
         "meta": {"stats": {"total_conversation_objects": total_conversation_objects, "total_unique_messages": unique_messages, "total_duplicate_messages_skipped": duplicate_messages, "total_conversations": len(conversation_stats), "total_timestamped_messages": timestamped_messages, "token_estimation_method": token_method}},
         "monthly": monthly_rows,
@@ -246,10 +303,13 @@ def write_outputs(output_dir: Path, parsed: dict) -> None:
     write_json(output_dir / "dashboard_conversations.json", {"meta": parsed.get("meta", {}), "total": len(parsed.get("conversation_index", [])), "items": parsed.get("conversation_index", [])})
     write_json(output_dir / "dashboard_categories.json", {"meta": parsed.get("meta", {}), "category_monthly": [], "category_daily": [], "keywords_monthly": [], "role_monthly": parsed.get("role_monthly", [])})
     write_csv(output_dir / "monthly_user_messages.csv", ["month", "user_messages"], [[r["month"], r["user_messages"]] for r in monthly])
+    write_csv(output_dir / "monthly_user_messages_by_mode.csv", ["month", "all_messages", "non_voice_messages", "voice_messages"], [[r["month"], r["user_messages"], r.get("non_voice_messages", 0), r.get("voice_messages", 0)] for r in monthly])
     write_csv(output_dir / "monthly_conversations.csv", ["month", "conversations"], [[r["month"], r["conversations"]] for r in monthly])
     write_csv(output_dir / "monthly_active_days.csv", ["month", "active_days"], [[r["month"], r["active_days"]] for r in monthly])
     write_csv(output_dir / "daily_user_messages.csv", ["date", "user_messages"], [[r["date"], r["user_messages"]] for r in daily])
     write_csv(output_dir / "daily_hourly_user_messages.csv", ["date", "hour", "user_messages"], [[r["date"], r["hour"], r["user_messages"]] for r in parsed.get("daily_hourly", [])])
+    write_csv(output_dir / "daily_user_messages_by_mode.csv", ["date", "all_messages", "non_voice_messages", "voice_messages"], [[r["date"], r["user_messages"], r.get("non_voice_messages", 0), r.get("voice_messages", 0)] for r in daily])
+    write_csv(output_dir / "daily_hourly_user_messages_by_mode.csv", ["date", "hour", "all_messages", "non_voice_messages", "voice_messages"], [[r["date"], r["hour"], r["user_messages"], r.get("non_voice_messages", 0), r.get("voice_messages", 0)] for r in parsed.get("daily_hourly", [])])
     write_csv(output_dir / "daily_conversations.csv", ["date", "conversations"], [[r["date"], r["conversations"]] for r in daily])
     write_csv(output_dir / "conversations_index.csv", ["conversation_id", "title", "first_message_at", "last_message_at", "user_message_count", "assistant_message_count", "total_message_count", "active_days", "inferred_category", "top_keywords"], [[r.get("conversation_id", ""), r.get("title", ""), r.get("first_message_at", ""), r.get("last_message_at", ""), r.get("user_message_count", 0), r.get("assistant_message_count", 0), r.get("total_message_count", 0), r.get("active_days", 0), r.get("inferred_category", ""), ""] for r in parsed.get("conversation_index", [])])
     write_csv(output_dir / "category_monthly.csv", ["month", "category", "total_message_count", "user_message_count", "assistant_message_count", "conversation_count"], [])

@@ -6,6 +6,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from src.chat_export_core import is_voice_message
+
 
 class AnalyzeChatExportTest(unittest.TestCase):
     def test_generates_public_dashboard_outputs(self) -> None:
@@ -42,10 +44,13 @@ class AnalyzeChatExportTest(unittest.TestCase):
                 "category_daily.csv",
                 "keywords_monthly.csv",
                 "monthly_user_messages.csv",
+                "monthly_user_messages_by_mode.csv",
                 "monthly_conversations.csv",
                 "monthly_active_days.csv",
                 "daily_user_messages.csv",
+                "daily_user_messages_by_mode.csv",
                 "daily_hourly_user_messages.csv",
+                "daily_hourly_user_messages_by_mode.csv",
                 "daily_conversations.csv",
                 "dashboard.html",
                 "dashboard_summary.json",
@@ -70,6 +75,10 @@ class AnalyzeChatExportTest(unittest.TestCase):
             monthly = {row["month"]: row for row in parsed["monthly"]}
             self.assertEqual(monthly["2024-01"]["user_messages"], 2)
             self.assertEqual(monthly["2024-02"]["user_messages"], 1)
+            self.assertEqual(monthly["2024-01"]["non_voice_messages"], 2)
+            self.assertEqual(monthly["2024-01"]["voice_messages"], 0)
+            self.assertEqual(monthly["2024-02"]["non_voice_messages"], 0)
+            self.assertEqual(monthly["2024-02"]["voice_messages"], 1)
             self.assertEqual(monthly["2024-01"]["peak_daily_user_messages"], 2)
             self.assertEqual(monthly["2024-01"]["peak_daily_date"], "2024-01-01")
 
@@ -81,12 +90,27 @@ class AnalyzeChatExportTest(unittest.TestCase):
             daily_payload = json.loads((output_dir / "dashboard_daily.json").read_text(encoding="utf-8"))
             self.assertIn("daily", daily_payload)
             for row in daily_payload["daily"]:
+                self.assertIn("non_voice_messages", row)
+                self.assertIn("voice_messages", row)
                 self.assertIn("total_tokens_est", row)
 
             dashboard_html = (output_dir / "dashboard.html").read_text(encoding="utf-8")
             self.assertIn("dashboard_summary.json", dashboard_html)
             self.assertIn("ChatGPT 利用ダッシュボード", dashboard_html)
+            self.assertIn("countModeSelect", dashboard_html)
+            self.assertIn("音声を除く", dashboard_html)
             self.assertNotIn("Codex", dashboard_html)
+
+
+class VoiceMessageDetectionTest(unittest.TestCase):
+    def test_detects_bidirectional_voice_metadata(self) -> None:
+        self.assertTrue(is_voice_message({"metadata": {"bidi_voice_mode_message": True}}))
+
+    def test_detects_incoming_audio_transcription_only(self) -> None:
+        incoming = {"content": {"parts": [{"content_type": "audio_transcription", "direction": "in"}]}}
+        outgoing = {"content": {"parts": [{"content_type": "audio_transcription", "direction": "out"}]}}
+        self.assertTrue(is_voice_message(incoming))
+        self.assertFalse(is_voice_message(outgoing))
 
 
 if __name__ == "__main__":

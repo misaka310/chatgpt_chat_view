@@ -9,6 +9,17 @@ __pycache__/
 !/input/.keep
 
 /output/
+/.ai-bridge/
+/sites/usage-dashboard/public/usage-data.json
+/sites/usage-dashboard/.sites-build-state.json
+/sites/usage-dashboard/.npm-install-state.json
+/sites/usage-dashboard/.npm-cache/
+/sites/usage-dashboard/.npm-install.lock/
+/sites/usage-dashboard/.npm-stage*/
+/sites/usage-dashboard/.node_modules-old-*/
+/sites/usage-dashboard/.empty-node-modules/
+/=/
+/sites/usage-dashboard/=/
 /sample_output/
 /.demo-build/
 /.demo-pages/

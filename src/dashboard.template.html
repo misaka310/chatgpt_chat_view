@@ -178,7 +178,7 @@
 
     .filters {
       display: grid;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
+      grid-template-columns: repeat(4, minmax(0, 1fr));
       gap: 10px;
       align-items: end;
     }
@@ -357,6 +357,11 @@
 
     .metric .value-strong {
       color: #ffffff;
+    }
+
+    .metric.selected-mode {
+      border-color: rgba(123, 164, 244, 0.62);
+      box-shadow: inset 0 0 0 1px rgba(108, 157, 255, 0.22);
     }
 
     .table {
@@ -568,6 +573,14 @@
             <option>月別</option>
           </select>
         </div>
+        <div class="field">
+          <label for="countModeSelect">集計対象</label>
+          <select id="countModeSelect">
+            <option value="all">すべて</option>
+            <option value="nonVoice">音声を除く</option>
+            <option value="voice">音声のみ</option>
+          </select>
+        </div>
         <div class="field field-wide">
           <label for="monthSelect">詳細月</label>
           <select id="monthSelect"></select>
@@ -638,12 +651,14 @@
       monthly: [],
       daily: [],
       selectedMonth: null,
+      countMode: "all",
     };
 
     const els = {
       generatedAt: document.getElementById("generatedAt"),
       latestMonthChip: document.getElementById("latestMonthChip"),
       monthSelect: document.getElementById("monthSelect"),
+      countModeSelect: document.getElementById("countModeSelect"),
       monthlyDeltaChip: document.getElementById("monthlyDeltaChip"),
       selectedMonthLabel: document.getElementById("selectedMonthLabel"),
       summaryCards: document.getElementById("summaryCards"),
@@ -687,6 +702,42 @@
       return a.month.localeCompare(b.month);
     }
 
+    const COUNT_MODES = {
+      all: {
+        label: "すべて",
+        field: "user_messages",
+        activeDaysField: "active_days",
+        avgField: "avg_per_active_day",
+      },
+      nonVoice: {
+        label: "音声を除く",
+        field: "non_voice_messages",
+        activeDaysField: "non_voice_active_days",
+        avgField: "avg_non_voice_per_active_day",
+      },
+      voice: {
+        label: "音声のみ",
+        field: "voice_messages",
+        activeDaysField: "voice_active_days",
+        avgField: "avg_voice_per_active_day",
+      },
+    };
+
+    function getModeConfig(mode = state.countMode) {
+      return COUNT_MODES[mode] || COUNT_MODES.all;
+    }
+
+    function getMessageCount(row, mode = state.countMode) {
+      if (!row) return 0;
+      const config = getModeConfig(mode);
+      if (row[config.field] !== undefined && row[config.field] !== null) {
+        return Number(row[config.field] || 0);
+      }
+      const all = Number(row.user_messages || 0);
+      const voice = Number(row.voice_messages || 0);
+      return mode === "voice" ? voice : mode === "nonVoice" ? Math.max(0, all - voice) : all;
+    }
+
     function getSortedMonthlyRows() {
       return [...state.monthly].sort(compareMonth);
     }
@@ -702,14 +753,24 @@
       return rows[index - 1];
     }
 
+    function getActiveDays(row) {
+      if (!row) return 0;
+      const config = getModeConfig();
+      if (row[config.activeDaysField] !== undefined && row[config.activeDaysField] !== null) {
+        return Number(row[config.activeDaysField] || 0);
+      }
+      return Number(row.active_days || 0);
+    }
+
     function getAvgPerDay(row) {
       if (!row) return 0;
-      if (row.avg_per_active_day !== undefined && row.avg_per_active_day !== null) {
-        return Number(row.avg_per_active_day || 0);
+      const config = getModeConfig();
+      if (row[config.avgField] !== undefined && row[config.avgField] !== null) {
+        return Number(row[config.avgField] || 0);
       }
-      const activeDays = Number(row.active_days || 0);
+      const activeDays = getActiveDays(row);
       if (!activeDays) return 0;
-      return Number(row.user_messages || 0) / activeDays;
+      return getMessageCount(row) / activeDays;
     }
 
     function getMonthDays(month) {
@@ -730,6 +791,8 @@
           date,
           day,
           user_messages: Number(row?.user_messages || 0),
+          non_voice_messages: Number(row?.non_voice_messages || 0),
+          voice_messages: Number(row?.voice_messages || 0),
         });
       }
 
@@ -776,11 +839,12 @@
     }
 
     function renderMonthlyChart(rows) {
-      const maxValue = Math.max(1, ...rows.map((row) => Number(row.user_messages || 0)));
+      const displayRows = rows.map((row) => ({ ...row, display_messages: getMessageCount(row) }));
+      const maxValue = Math.max(1, ...displayRows.map((row) => Number(row.display_messages || 0)));
       els.monthlyChart.replaceChildren(
-        ...rows.map((row) => makeBarItem(
+        ...displayRows.map((row) => makeBarItem(
           row,
-          "user_messages",
+          "display_messages",
           monthShortLabel(row.month),
           maxValue,
           row.month === state.selectedMonth,
@@ -791,7 +855,7 @@
     }
 
     function renderMonthlyDeltaBadge(selected, previous) {
-      const diff = diffInfo(selected?.user_messages || 0, previous?.user_messages || 0);
+      const diff = diffInfo(getMessageCount(selected), getMessageCount(previous));
       if (!previous) {
         els.monthlyDeltaChip.textContent = "前月比 -";
         return;
@@ -805,28 +869,42 @@
         return;
       }
 
-      const diff = diffInfo(selected.user_messages, previous?.user_messages || 0);
+      const diff = diffInfo(getMessageCount(selected), getMessageCount(previous));
+      const allCount = getMessageCount(selected, "all");
+      const nonVoiceCount = getMessageCount(selected, "nonVoice");
+      const voiceCount = getMessageCount(selected, "voice");
+      const mode = getModeConfig();
       const avg = getAvgPerDay(selected);
 
-      els.selectedMonthLabel.textContent = monthLabel(selected.month);
+      els.selectedMonthLabel.textContent = `${monthLabel(selected.month)}・${mode.label}`;
       els.summaryCards.innerHTML = `
-        <article class="metric emphasis">
-          <div class="kicker">送信回数 <span class="small">あなたの発言数</span></div>
-          <div class="big value-strong">${fmtInt(selected.user_messages)}</div>
-          <div class="small">${monthLabel(selected.month)} に送った回数です</div>
+        <article class="metric${state.countMode === "all" ? " selected-mode" : ""}">
+          <div class="kicker">全件</div>
+          <div class="big value-strong">${fmtInt(allCount)}</div>
+          <div class="small">音声発話を含む全ユーザー送信です</div>
+        </article>
+        <article class="metric${state.countMode === "nonVoice" ? " selected-mode" : ""}">
+          <div class="kicker">音声を除く</div>
+          <div class="big value-strong">${fmtInt(nonVoiceCount)}</div>
+          <div class="small">GPT Liveなどの音声発話を除外しています</div>
+        </article>
+        <article class="metric${state.countMode === "voice" ? " selected-mode" : ""}">
+          <div class="kicker">音声のみ</div>
+          <div class="big value-strong">${fmtInt(voiceCount)}</div>
+          <div class="small">音声会話として識別できた発話です</div>
         </article>
         <article class="metric">
-          <div class="kicker">前月差</div>
+          <div class="kicker">前月差（${mode.label}）</div>
           <div class="big ${diff.cls}">${diff.text}</div>
-          <div class="small">送信回数ベースで前月と比較しています</div>
+          <div class="small">現在の集計対象で前月と比較しています</div>
         </article>
         <article class="metric">
-          <div class="kicker">活動日数</div>
-          <div class="big">${fmtInt(selected.active_days)}</div>
-          <div class="small">月内で送信があった日数です</div>
+          <div class="kicker">活動日数（${mode.label}）</div>
+          <div class="big">${fmtInt(getActiveDays(selected))}</div>
+          <div class="small">現在の集計対象で送信があった日数です</div>
         </article>
         <article class="metric">
-          <div class="kicker">1日平均送信回数</div>
+          <div class="kicker">1日平均（${mode.label}）</div>
           <div class="big">${fmtFloat(avg, 1)}</div>
           <div class="small">活動日数あたりの送信回数です</div>
         </article>
@@ -847,15 +925,15 @@
       const items = sorted.map((row) => {
         const previousIndex = rows.findIndex((item) => item.month === row.month) - 1;
         const previous = previousIndex >= 0 ? rows[previousIndex] : null;
-        const diff = diffInfo(row.user_messages, previous?.user_messages || 0);
+        const diff = diffInfo(getMessageCount(row), getMessageCount(previous));
         const selected = row.month === state.selectedMonth;
         return `
           <div class="table-row${selected ? " selected" : ""}">
             <button type="button" aria-label="${monthLabel(row.month)} を選択" onclick="window.__selectMonth('${row.month}')">
               <div>${monthLabel(row.month)}</div>
-              <div class="num">${fmtInt(row.user_messages)}</div>
+              <div class="num">${fmtInt(getMessageCount(row))}</div>
               <div class="num delta ${diff.cls}">${diff.text}</div>
-              <div class="num">${fmtInt(row.active_days)} 日</div>
+              <div class="num">${fmtInt(getActiveDays(row))} 日</div>
               <div class="num">${fmtFloat(getAvgPerDay(row), 1)}</div>
             </button>
           </div>
@@ -865,7 +943,7 @@
       els.monthlyList.innerHTML = `
         <div class="table-head">
           <div>月</div>
-          <div class="num">送信回数</div>
+          <div class="num">送信回数（${getModeConfig().label}）</div>
           <div class="num">前月差</div>
           <div class="num">活動日数</div>
           <div class="num">1日平均送信回数</div>
@@ -875,19 +953,19 @@
     }
 
     function renderDailySection(selected) {
-      const monthRows = buildDailyRows(selected.month);
-      const maxValue = Math.max(1, ...monthRows.map((row) => Number(row.user_messages || 0)));
-      const total = monthRows.reduce((acc, row) => acc + Number(row.user_messages || 0), 0);
+      const monthRows = buildDailyRows(selected.month).map((row) => ({ ...row, display_messages: getMessageCount(row) }));
+      const maxValue = Math.max(1, ...monthRows.map((row) => Number(row.display_messages || 0)));
+      const total = monthRows.reduce((acc, row) => acc + Number(row.display_messages || 0), 0);
       const average = monthRows.length ? total / monthRows.length : 0;
-      const peak = monthRows.reduce((best, row) => (row.user_messages > best.user_messages ? row : best), monthRows[0] || null);
-      const trough = monthRows.reduce((best, row) => (row.user_messages < best.user_messages ? row : best), monthRows[0] || null);
+      const peak = monthRows.reduce((best, row) => (row.display_messages > best.display_messages ? row : best), monthRows[0] || null);
+      const trough = monthRows.reduce((best, row) => (row.display_messages < best.display_messages ? row : best), monthRows[0] || null);
 
-      els.dailyTitle.textContent = `選択月の日別送信回数（${monthLabel(selected.month)}）`;
+      els.dailyTitle.textContent = `選択月の日別送信回数（${monthLabel(selected.month)}・${getModeConfig().label}）`;
       els.dailyChart.style.setProperty("--day-count", String(monthRows.length || 31));
       els.dailyChart.replaceChildren(
         ...monthRows.map((row, index) => makeBarItem(
           row,
-          "user_messages",
+          "display_messages",
           String(row.day).padStart(2, "0"),
           maxValue,
           false,
@@ -907,11 +985,11 @@
         </div>
         <div class="stat">
           <div class="label">最大</div>
-          <div class="value">${peak ? `${fmtInt(peak.user_messages)} (${dateLabel(peak.date)})` : "-"}</div>
+          <div class="value">${peak ? `${fmtInt(peak.display_messages)} (${dateLabel(peak.date)})` : "-"}</div>
         </div>
         <div class="stat">
           <div class="label">最小</div>
-          <div class="value">${trough ? `${fmtInt(trough.user_messages)} (${dateLabel(trough.date)})` : "-"}</div>
+          <div class="value">${trough ? `${fmtInt(trough.display_messages)} (${dateLabel(trough.date)})` : "-"}</div>
         </div>
       `;
     }
@@ -965,6 +1043,11 @@
 
         window.__selectMonth = (month) => setSelectedMonth(month);
         els.monthSelect.addEventListener("change", (event) => setSelectedMonth(event.target.value));
+        els.countModeSelect.value = state.countMode;
+        els.countModeSelect.addEventListener("change", (event) => {
+          state.countMode = event.target.value;
+          render();
+        });
 
         render();
       } catch (error) {

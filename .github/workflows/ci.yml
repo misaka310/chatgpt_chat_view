@@ -9,9 +9,15 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.13.0'
+          cache: npm
+          cache-dependency-path: sites/usage-dashboard/package-lock.json
       - run: python -m pip install --upgrade pip
       - run: pip install -r requirements.txt
-      - run: python -m unittest
+      - run: python scripts/check_environment.py
+      - run: python -m unittest discover -s tests -v
       - run: python scripts/build_sample_output.py --output-dir /tmp/sample-output --publish-dir /tmp/sample-pages
       - run: test ! -e /tmp/sample-pages/conversations.json
       - run: test -f /tmp/sample-pages/dashboard.html
@@ -22,3 +28,11 @@ jobs:
       - run: python scripts/patch_3h_html.py --output-dir /tmp/chatgpt-dashboard
       - run: python scripts/inject_3h_into_dashboard.py --output-dir /tmp/chatgpt-dashboard
       - run: python scripts/patch_dashboard_daily_chart.py --output-dir /tmp/chatgpt-dashboard
+      - run: npm ci --ignore-scripts
+        working-directory: sites/usage-dashboard
+      - run: npm audit --audit-level=high
+        working-directory: sites/usage-dashboard
+      - run: npm test
+        working-directory: sites/usage-dashboard
+      - run: npm run lint
+        working-directory: sites/usage-dashboard
