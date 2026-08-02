@@ -10,6 +10,7 @@
     "build": "node ./node_modules/vinext/dist/cli.js build",
     "start": "node ./node_modules/vinext/dist/cli.js start",
     "test": "node tests/run-tests.mjs",
+    "test:ui": "node tests/mobile-ui.test.mjs",
     "lint": "eslint ."
   },
   "dependencies": {

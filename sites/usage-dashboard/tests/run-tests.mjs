@@ -14,10 +14,10 @@ for (const key of Object.keys(safeEnv)) {
 safeEnv.npm_config_cache = npmCachePath;
 
 const synthetic = {
-  schema_version: 2,
+  schema_version: 3,
   generated_at: "2026-01-03T12:00:00+09:00",
   timezone: "Asia/Tokyo",
-  method: "ChatGPTエクスポートをPC内で解析し、全件・音声除外・音声のみの送信回数など、本文を含まない数値だけを許可リスト方式で抽出しています。",
+  method: "ChatGPTエクスポートをPC内で解析し、全体・音声除外・音声のみの送信回数など、本文を含まない数値データだけを公開用に抽出しています。",
   totals: {
     sent_messages: 42,
     non_voice_messages: 35,
@@ -37,6 +37,14 @@ const synthetic = {
     { date: "2026-01-02", month: "2026-01", day: 2, sent_messages: 18, non_voice_messages: 15, voice_messages: 3, conversation_count: 3, estimated_tokens: 2700 },
     { date: "2026-01-03", month: "2026-01", day: 3, sent_messages: 12, non_voice_messages: 10, voice_messages: 2, conversation_count: 2, estimated_tokens: 1800 },
   ],
+  hourly_weekday: Array.from({ length: 7 * 24 }, (_, index) => ({
+    month: "2026-01",
+    weekday: Math.floor(index / 24),
+    hour: index % 24,
+    sent_messages: (index % 9) + 1,
+    non_voice_messages: (index % 7) + 1,
+    voice_messages: index % 3,
+  })),
 };
 
 function run(command, args) {
@@ -56,6 +64,7 @@ try {
   const built = run(process.execPath, ["./node_modules/vinext/dist/cli.js", "build"]);
   if (built) {
     run(process.execPath, ["--test", "tests/rendered-html.test.mjs"]);
+    run(process.execPath, ["tests/mobile-ui.test.mjs"]);
   }
 } finally {
   if (original === null) {

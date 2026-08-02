@@ -35,11 +35,12 @@ test("server-renders the private aggregate dashboard shell", async () => {
 });
 
 test("keeps the public source surface minimal, reference-aligned, responsive, and local-only", async () => {
-  const [page, layout, css, packageJson, publicFiles] = await Promise.all([
+  const [page, layout, css, packageJson, npmConfig, publicFiles] = await Promise.all([
     readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/layout.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
     readFile(new URL("../package.json", import.meta.url), "utf8"),
+    readFile(new URL("../.npmrc", import.meta.url), "utf8"),
     readdir(new URL("../public/", import.meta.url)),
   ]);
 
@@ -66,11 +67,16 @@ test("keeps the public source surface minimal, reference-aligned, responsive, an
   assert.match(page, /レポート/);
   assert.match(page, /設定/);
   assert.match(page, /hourly_weekday/);
+  assert.match(page, /function HorizontalScroll/);
+  assert.match(page, /data-initial-scroll/);
+  assert.match(page, /横方向にスワイプ/);
   assert.doesNotMatch(page, /3時間|gpt_3h/i);
   assert.doesNotMatch(page, /https?:\/\/|chatgpt-usage-dashboard-33/i);
   assert.doesNotMatch(page, /conversation_id|message_id|node_id/i);
   assert.doesNotMatch(layout, /next\/font|codex-preview|_sites-preview|chatgpt-usage-dashboard-33/i);
   assert.doesNotMatch(packageJson, /react-loading-skeleton|drizzle/i);
+  assert.match(packageJson, /"test:ui": "node tests\/mobile-ui\.test\.mjs"/);
+  assert.equal(npmConfig.trim(), "cache=.npm-cache");
   assert.match(css, /font-family:[^;]*Noto Sans JP/);
   assert.match(css, /overflow-x: clip/);
   assert.match(css, /grid-template-columns: 96px minmax\(0, 1fr\)/);
@@ -81,6 +87,9 @@ test("keeps the public source surface minimal, reference-aligned, responsive, an
   assert.match(css, /@media \(max-width: 1180px\)/);
   assert.match(css, /@media \(max-width: 760px\)/);
   assert.match(css, /@media \(max-width: 430px\)/);
+  assert.match(css, /scrollbar-width: none/);
+  assert.match(css, /scroll-frame\.can-scroll-left/);
+  assert.match(css, /heatmap-row > strong[\s\S]*position: sticky/);
   assert.match(css, /user-select: none/);
   assert.doesNotMatch(css, /@import|url\(https?:/i);
 });
