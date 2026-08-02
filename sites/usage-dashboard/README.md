@@ -13,6 +13,7 @@ The frontend reads only this allowlisted schema:
 - total, non-voice, and voice active-day counts
 - conversation counts
 - estimated token counts
+- aggregate weekday-by-hour counts used by the heatmap
 - aggregate generation time and fixed methodology text
 
 Raw exports, private analysis output, titles, identifiers, local paths, input names, logs, and per-conversation details do not belong in this directory or its deployment artifact.
@@ -28,7 +29,17 @@ From the repository root, run `start_sites.bat`. It:
 5. installs exact Node dependencies only when needed;
 6. builds or reuses the Sites artifact and opens a local preview.
 
-Node.js 22.13 or later is required.
+Node.js 22.13 or later is required. The project-local `.npmrc` keeps npm's cache in the ignored `.npm-cache/` directory even when the parent process supplies an invalid `HOME` value.
+
+## Verification
+
+From this directory:
+
+- `npm test` builds with synthetic schema-v3 data, checks the rendered shell, and runs the real dashboard in a headless Chromium browser at `390x844`.
+- `npm run test:ui` runs only the mobile browser check against the current build.
+- `npm run lint` checks the tracked frontend and test code.
+
+The mobile browser check requires Chrome, Chromium, or Brave. Set `CHROME_PATH` when it is not installed in a standard location. It verifies that the page itself does not scroll horizontally, wide cards scroll only inside themselves, the daily chart starts at the latest dates, native scrollbars remain hidden, weekday labels stay visible, and the mode controls still work.
 
 ## Access control after deployment
 

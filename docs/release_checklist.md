@@ -11,6 +11,7 @@ Use this before merging or publishing a release.
 - [ ] License is present.
 - [ ] README starts with a quick start.
 - [ ] Root files are limited to the two user entry points and essential repository documents/configuration.
+- [ ] No accidental `=/npm-cache/` directory remains in the repository or Sites root.
 
 ## Data safety
 
@@ -29,6 +30,15 @@ Use this before merging or publishing a release.
 - [ ] `dashboard.html` links to the 3-hour usage report.
 - [ ] `start_sites.bat --no-open` builds, scans, and reuses the Sites artifact correctly.
 
+## Responsive Sites UX
+
+- [ ] At `390x844`, the document itself has no horizontal overflow.
+- [ ] Daily, heatmap, and activity cards scroll horizontally only inside their own card.
+- [ ] The daily chart initially shows the latest dates.
+- [ ] Native horizontal scrollbars are hidden while edge fades indicate more content.
+- [ ] Heatmap weekday labels remain visible while swiping.
+- [ ] Month and mode controls still update the visible data.
+
 ## Sites access
 
 - [ ] The final Share/publishing screen shows the intended restrictive audience.
@@ -38,7 +48,8 @@ Use this before merging or publishing a release.
 ## Verification
 
 - [ ] `python -m unittest discover -s tests -v` passes.
-- [ ] `npm test` passes in `sites/usage-dashboard`.
+- [ ] `npm test` passes in `sites/usage-dashboard`, including the `390x844` headless-browser check.
+- [ ] `npm run test:ui` passes when run separately against the current build.
 - [ ] `npm run lint` passes in `sites/usage-dashboard`.
 - [ ] `git diff --check` passes.
 - [ ] GitHub Actions passes.

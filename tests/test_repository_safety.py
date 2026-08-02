@@ -60,6 +60,11 @@ class RepositorySafetyTest(unittest.TestCase):
         actual_root_files = {path.name for path in repo_root.iterdir() if path.is_file()}
         self.assertEqual(actual_root_files, allowed_root_files)
 
+    def test_no_malformed_npm_cache_directories(self) -> None:
+        repo_root = Path(__file__).resolve().parents[1]
+        for relative in ("=/npm-cache", "sites/usage-dashboard/=/npm-cache"):
+            self.assertFalse((repo_root / relative).exists(), relative)
+
     def test_startup_scripts_share_environment_contract(self) -> None:
         repo_root = Path(__file__).resolve().parents[1]
         start = (repo_root / "start.bat").read_text(encoding="utf-8")

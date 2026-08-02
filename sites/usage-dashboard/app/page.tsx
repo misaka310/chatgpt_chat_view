@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 type MonthlyRow = {
   month: string;
@@ -228,6 +228,70 @@ function MetricCard({ label, value, note, compact = false, accent = false }: { l
   );
 }
 
+function HorizontalScroll({
+  children,
+  className = "",
+  initialEnd = false,
+  resetKey = "",
+  label,
+}: {
+  children: React.ReactNode;
+  className?: string;
+  initialEnd?: boolean;
+  resetKey?: string;
+  label: string;
+}) {
+  const viewportRef = useRef<HTMLDivElement>(null);
+  const [edges, setEdges] = useState({ left: false, right: false });
+
+  const updateEdges = useCallback(() => {
+    const viewport = viewportRef.current;
+    if (!viewport) return;
+    const maxScroll = Math.max(0, viewport.scrollWidth - viewport.clientWidth);
+    setEdges({
+      left: viewport.scrollLeft > 2,
+      right: viewport.scrollLeft < maxScroll - 2,
+    });
+  }, []);
+
+  useEffect(() => {
+    const viewport = viewportRef.current;
+    if (!viewport) return;
+
+    const resetPosition = () => {
+      const mobile = window.matchMedia("(max-width: 760px)").matches;
+      viewport.scrollLeft = initialEnd && mobile ? viewport.scrollWidth : 0;
+      updateEdges();
+    };
+
+    const frame = window.requestAnimationFrame(resetPosition);
+    const resizeObserver = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(updateEdges);
+    resizeObserver?.observe(viewport);
+    if (viewport.firstElementChild instanceof HTMLElement) resizeObserver?.observe(viewport.firstElementChild);
+    viewport.addEventListener("scroll", updateEdges, { passive: true });
+
+    return () => {
+      window.cancelAnimationFrame(frame);
+      resizeObserver?.disconnect();
+      viewport.removeEventListener("scroll", updateEdges);
+    };
+  }, [initialEnd, resetKey, updateEdges]);
+
+  return (
+    <div className={`scroll-frame${edges.left ? " can-scroll-left" : ""}${edges.right ? " can-scroll-right" : ""}`}>
+      <div
+        ref={viewportRef}
+        className={`scroll-viewport${className ? ` ${className}` : ""}`}
+        data-initial-scroll={initialEnd ? "end" : "start"}
+        tabIndex={0}
+        aria-label={label}
+      >
+        {children}
+      </div>
+    </div>
+  );
+}
+
 export default function Home() {
   const [data, setData] = useState<UsageData | null>(null);
   const [selectedMonth, setSelectedMonth] = useState("");
@@ -398,7 +462,12 @@ export default function Home() {
             </div>
             <span className="chart-icon"><Icon name="chart" size={20} /></span>
           </div>
-          <div className="daily-scroll">
+          <HorizontalScroll
+            className="daily-scroll"
+            initialEnd
+            resetKey={`${selectedMonth}-${countMode}`}
+            label="日別送信回数。横方向にスワイプして日付を移動できます"
+          >
             <div className="axis-chart daily-axis-chart" aria-label={`${selected ? formatMonth(selected.month) : "選択月"}の日別送信回数`}>
               <div className="y-axis">
                 {[...dailyTicks].reverse().map((tick) => <span key={tick}>{numberFormatter.format(tick)}</span>)}
@@ -416,7 +485,7 @@ export default function Home() {
                 </div>
               </div>
             </div>
-          </div>
+          </HorizontalScroll>
         </section>
 
         <section id="reports" className="bottom-grid">
@@ -440,41 +509,53 @@ export default function Home() {
               <h2>時間帯別の送信傾向 <span>（{selected ? formatMonth(selected.month) : "-"}）</span> <span className="info-dot">i</span></h2>
               <p>時間帯ごとの平均送信回数（{countModes[countMode].label}）</p>
             </div>
-            <div className="heatmap-wrap">
-              <div className="heatmap-hours">{Array.from({ length: 12 }, (_, index) => <span key={index}>{index * 2}</span>)}</div>
-              <div className="heatmap-grid">
-                {weekdays.map((weekday, weekdayIndex) => (
-                  <div className="heatmap-row" key={weekday}>
-                    <strong>{weekday}</strong>
-                    <div>{Array.from({ length: 24 }, (_, hour) => {
-                      const value = heatMap.get(`${weekdayIndex}-${hour}`) ?? 0;
-                      const opacity = value ? 0.18 + (value / heatMaximum) * 0.82 : 0.08;
-                      return <span key={hour} style={{ opacity }} title={`${weekday}曜 ${hour}時: ${numberFormatter.format(value)}回`} />;
-                    })}</div>
-                  </div>
-                ))}
+            <HorizontalScroll
+              className="heatmap-scroll"
+              resetKey={`${selectedMonth}-${countMode}`}
+              label="時間帯別の送信傾向。横方向にスワイプして時間を移動できます"
+            >
+              <div className="heatmap-wrap">
+                <div className="heatmap-hours">{Array.from({ length: 12 }, (_, index) => <span key={index}>{index * 2}</span>)}</div>
+                <div className="heatmap-grid">
+                  {weekdays.map((weekday, weekdayIndex) => (
+                    <div className="heatmap-row" key={weekday}>
+                      <strong>{weekday}</strong>
+                      <div>{Array.from({ length: 24 }, (_, hour) => {
+                        const value = heatMap.get(`${weekdayIndex}-${hour}`) ?? 0;
+                        const opacity = value ? 0.18 + (value / heatMaximum) * 0.82 : 0.08;
+                        return <span key={hour} style={{ opacity }} title={`${weekday}曜 ${hour}時: ${numberFormatter.format(value)}回`} />;
+                      })}</div>
+                    </div>
+                  ))}
+                </div>
+                <div className="heatmap-legend"><span>少ない</span>{Array.from({ length: 7 }, (_, index) => <i key={index} style={{ opacity: 0.12 + index * 0.14 }} />)}<span>多い</span></div>
               </div>
-              <div className="heatmap-legend"><span>少ない</span>{Array.from({ length: 7 }, (_, index) => <i key={index} style={{ opacity: 0.12 + index * 0.14 }} />)}<span>多い</span></div>
-            </div>
+            </HorizontalScroll>
           </section>
 
           <section className="panel activity-panel">
             <div className="panel-heading compact"><h2>最近の送信アクティビティ</h2></div>
-            <div className="activity-table">
-              <div className="activity-head"><span>日時</span><span>種別</span><span>送信回数</span><span>音声割合</span><span>ステータス</span></div>
-              {recentActivity.map((row) => {
-                const voiceRatio = row.sent_messages ? (row.voice_messages / row.sent_messages) * 100 : 0;
-                return (
-                  <div className="activity-row" key={row.date}>
-                    <span>{row.date.replaceAll("-", "/")}</span>
-                    <span>{countModes[countMode].label}</span>
-                    <strong>{numberFormatter.format(row.display_messages)}</strong>
-                    <span>{decimalFormatter.format(voiceRatio)}%</span>
-                    <span className="status"><i />完了</span>
-                  </div>
-                );
-              })}
-            </div>
+            <HorizontalScroll
+              className="activity-scroll"
+              resetKey={`${selectedMonth}-${countMode}`}
+              label="最近の送信アクティビティ。横方向にスワイプして列を確認できます"
+            >
+              <div className="activity-table">
+                <div className="activity-head"><span>日時</span><span>種別</span><span>送信回数</span><span>音声割合</span><span>ステータス</span></div>
+                {recentActivity.map((row) => {
+                  const voiceRatio = row.sent_messages ? (row.voice_messages / row.sent_messages) * 100 : 0;
+                  return (
+                    <div className="activity-row" key={row.date}>
+                      <span>{row.date.replaceAll("-", "/")}</span>
+                      <span>{countModes[countMode].label}</span>
+                      <strong>{numberFormatter.format(row.display_messages)}</strong>
+                      <span>{decimalFormatter.format(voiceRatio)}%</span>
+                      <span className="status"><i />完了</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </HorizontalScroll>
             <a className="activity-link" href="#daily">送信履歴をすべて見る <span>→</span></a>
           </section>
         </section>
