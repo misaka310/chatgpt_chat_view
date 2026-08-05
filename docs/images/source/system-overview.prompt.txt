@@ -1,0 +1,12 @@
+Create an extremely clear privacy-focused product diagram for a GitHub README, exactly 1536x1024, 3:2 landscape, white background, dark navy text, restrained green, blue, and teal accents, very large rounded cards, large Japanese labels, no logos, no watermark, no decorative clutter. Title: 「ChatGPT Export Usage Dashboard のしくみ」. Show one and only one arrow-based workflow: the local dashboard workflow. Do not draw any arrow to a public frontend. No crossed arrows, no arrows that begin from empty space, no tiny text.
+
+MAIN LOCAL FLOW, solid arrows, left to right:
+「ChatGPT データエクスポート」 → 「ローカル解析」 → 「重複除外・音声判定・利用量推定」 → 「個人用ダッシュボード」.
+Place a large heading above this row: 「すべてローカルPC内で処理」.
+Inside the dashboard card list exactly four large metrics on separate lines: 「月別 / 日別送信数」, 「全件 / 音声除外 / 音声のみ」, 「推定トークン数」, 「連続3時間の送信数候補」.
+
+Add one large shield note below the main row: 「会話本文・発言内容・個人情報は外部へ渡さない」.
+
+Add one independent information panel in the lower right with no connecting arrows, titled 「公開版を作る場合（任意）」. Inside this panel list exactly three large lines: 「検査済みの集計数値だけを使用」, 「公開物検査を通す」, 「ChatGPT Sites用フロント」. Add a final line inside the same panel: 「会話データは渡さない」. This panel is an explanatory note only, not a data-flow node. Do not connect it to any main-flow card.
+
+All labels must remain comfortably readable at 750px display width. Use no additional nodes, boundaries, step numbers, file-name annotations, arrows, or explanatory text.
