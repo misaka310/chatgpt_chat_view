@@ -8,6 +8,12 @@ ChatGPTのデータエクスポートを外部送信せず、ローカルで集�
 > **非公式・非提携について**
 > このプロジェクトは独立して開発された非公式ツールであり、OpenAIの公式製品、提携製品、承認製品、スポンサー製品ではありません。ChatGPT、OpenAIおよび関連する名称・商標は各権利者に帰属します。
 
+<p align="center">
+  <img src="docs/images/system-overview.png" alt="ChatGPT Export Usage Dashboardの処理フロー概要" width="100%">
+</p>
+
+ChatGPTのエクスポートをローカルで解析し、個人用ダッシュボードへまとめる流れを示しています。
+
 ![Synthetic dashboard sample](docs/images/dashboard.png)
 
 公開デモ: [合成データ版を開く](https://misaka310.github.io/chatgpt_chat_view/)

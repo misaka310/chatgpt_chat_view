@@ -109,13 +109,31 @@ class CdpClient {
   }
 }
 
-function stopProcess(child) {
+function waitForProcessExit(child, timeoutMs) {
+  if (!child || child.exitCode !== null) return Promise.resolve(true);
+  return new Promise((resolveExit) => {
+    let settled = false;
+    const finish = (exited) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      child.removeListener("exit", onExit);
+      resolveExit(exited);
+    };
+    const onExit = () => finish(true);
+    const timer = setTimeout(() => finish(child.exitCode !== null), timeoutMs);
+    child.once("exit", onExit);
+  });
+}
+
+async function stopProcess(child) {
   if (!child || child.exitCode !== null || !child.pid) return;
   if (process.platform === "win32") {
     spawnSync("taskkill", ["/PID", String(child.pid), "/T", "/F"], {
       windowsHide: true,
       stdio: "ignore",
     });
+    await waitForProcessExit(child, 5_000);
     return;
   }
   try {
@@ -123,6 +141,13 @@ function stopProcess(child) {
   } catch {
     child.kill("SIGTERM");
   }
+  if (await waitForProcessExit(child, 5_000)) return;
+  try {
+    process.kill(-child.pid, "SIGKILL");
+  } catch {
+    child.kill("SIGKILL");
+  }
+  await waitForProcessExit(child, 5_000);
 }
 
 async function waitForDashboard(cdp) {
@@ -305,9 +330,9 @@ async function main() {
     process.exitCode = 1;
   } finally {
     cdp?.close();
-    stopProcess(browser);
-    stopProcess(server);
-    rmSync(profile, { recursive: true, force: true });
+    await stopProcess(browser);
+    await stopProcess(server);
+    rmSync(profile, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
   }
 }
 
