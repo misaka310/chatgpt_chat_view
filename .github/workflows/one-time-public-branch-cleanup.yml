@@ -23,6 +23,7 @@ jobs:
             "cleanup/repo-boundaries"
             "policy/actions-guard"
             "maintenance/public-branch-cleanup"
+            "docs/generalize-legacy-dashboard-boundaries"
           )
           for branch in "${branches[@]}"; do
             status="$(curl --silent --show-error --location \
