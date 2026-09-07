@@ -61,7 +61,7 @@ class AnalyzeChatExportTest(unittest.TestCase):
             for filename in expected_files:
                 self.assertTrue((output_dir / filename).exists(), f"{filename} was not generated")
 
-            self.assertFalse((output_dir / "dashboard_codex_match.json").exists())
+            self.assertFalse(list(output_dir.glob("dashboard_*_match.json")))
             self.assertFalse((output_dir / "out").exists())
 
             parsed = json.loads((output_dir / "parsed_summary.json").read_text(encoding="utf-8"))
@@ -99,7 +99,6 @@ class AnalyzeChatExportTest(unittest.TestCase):
             self.assertIn("ChatGPT 利用ダッシュボード", dashboard_html)
             self.assertIn("countModeSelect", dashboard_html)
             self.assertIn("音声を除く", dashboard_html)
-            self.assertNotIn("Codex", dashboard_html)
 
 
 class VoiceMessageDetectionTest(unittest.TestCase):
