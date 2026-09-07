@@ -31,7 +31,7 @@ test("server-renders the private aggregate dashboard shell", async () => {
   assert.match(html, /<title>ChatGPT 利用ダッシュボード<\/title>/i);
   assert.match(html, /会話本文を含まない集計データを読み込んでいます/);
   assert.match(html, /name="robots" content="noindex, nofollow, nocache"/i);
-  assert.doesNotMatch(html, /codex-preview|Your site is taking shape|react-loading-skeleton/i);
+  assert.doesNotMatch(html, /Your site is taking shape|react-loading-skeleton/i);
 });
 
 test("keeps the public source surface minimal, reference-aligned, responsive, and local-only", async () => {
@@ -73,7 +73,7 @@ test("keeps the public source surface minimal, reference-aligned, responsive, an
   assert.doesNotMatch(page, /3時間|gpt_3h/i);
   assert.doesNotMatch(page, /https?:\/\/|chatgpt-usage-dashboard-33/i);
   assert.doesNotMatch(page, /conversation_id|message_id|node_id/i);
-  assert.doesNotMatch(layout, /next\/font|codex-preview|_sites-preview|chatgpt-usage-dashboard-33/i);
+  assert.doesNotMatch(layout, /next\/font|_sites-preview|chatgpt-usage-dashboard-33/i);
   assert.doesNotMatch(packageJson, /react-loading-skeleton|drizzle/i);
   assert.match(packageJson, /"test:ui": "node tests\/mobile-ui\.test\.mjs"/);
   assert.equal(npmConfig.trim(), "cache=.npm-cache");

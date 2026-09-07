@@ -115,6 +115,13 @@ def analysis_is_current(expected_state: dict[str, object]) -> bool:
     return outputs_are_complete() and load_state() == expected_state
 
 
+def cleanup_legacy_dashboard_artifacts(output_dir: Path) -> None:
+    legacy_paths = [output_dir / "index.html", *output_dir.glob("dashboard_*_match.json")]
+    for legacy_path in legacy_paths:
+        if legacy_path.is_file():
+            legacy_path.unlink()
+
+
 def run_checked(command: list[str]) -> None:
     print("> " + " ".join(command), flush=True)
     subprocess.run(command, cwd=REPO_ROOT, check=True)
@@ -159,10 +166,7 @@ def analyze() -> None:
     ):
         run_checked([python, str(REPO_ROOT / "scripts" / script), "--output-dir", str(OUTPUT_DIR)])
     shutil.copy2(ASSETS_DIR / "favicon.svg", OUTPUT_DIR / "favicon.svg")
-    for legacy_name in ("index.html", "dashboard_codex_match.json"):
-        legacy_path = OUTPUT_DIR / legacy_name
-        if legacy_path.exists():
-            legacy_path.unlink()
+    cleanup_legacy_dashboard_artifacts(OUTPUT_DIR)
 
 
 def save_state(state: dict[str, object]) -> None:
