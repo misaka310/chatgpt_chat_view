@@ -49,6 +49,20 @@ class StartDashboardTest(unittest.TestCase):
                 }
                 self.assertFalse(self.module.analysis_is_current(changed))
 
+    def test_legacy_match_artifacts_are_removed_by_generic_pattern(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_name:
+            output_dir = Path(temp_name)
+            legacy_match = output_dir / "dashboard_legacy_match.json"
+            unrelated = output_dir / "dashboard_summary.json"
+            legacy_match.write_text("{}", encoding="utf-8")
+            unrelated.write_text("{}", encoding="utf-8")
+
+            self.assertTrue(hasattr(self.module, "cleanup_legacy_dashboard_artifacts"))
+            self.module.cleanup_legacy_dashboard_artifacts(output_dir)
+
+            self.assertFalse(legacy_match.exists())
+            self.assertTrue(unrelated.exists())
+
 
 if __name__ == "__main__":
     unittest.main()
