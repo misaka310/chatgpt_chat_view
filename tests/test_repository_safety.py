@@ -52,6 +52,7 @@ class RepositorySafetyTest(unittest.TestCase):
             "LICENSE",
             "PRIVACY.md",
             "README.md",
+            "AGENTS.md",
             "requirements.txt",
             "SECURITY.md",
             "start.bat",
