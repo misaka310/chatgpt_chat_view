@@ -54,11 +54,12 @@ class RepositorySafetyTest(unittest.TestCase):
             "README.md",
             "AGENTS.md",
             "requirements.txt",
+            "requirements-ci.txt",
             "SECURITY.md",
             "start.bat",
             "start_sites.bat",
         }
-        actual_root_files = {path.name for path in repo_root.iterdir() if path.is_file()}
+        actual_root_files = {path.name for path in repo_root.iterdir() if path.is_file() and path.name != ".git"}
         self.assertEqual(actual_root_files, allowed_root_files)
 
     def test_no_malformed_npm_cache_directories(self) -> None:
