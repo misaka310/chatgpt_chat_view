@@ -21,3 +21,9 @@ ChatGPT Sitesを利用する場合、許可された匿名集計値はリモー�
 ## Reporting a vulnerability
 
 GitHub の **Security** タブで Private Vulnerability Reporting または Security Advisory が利用できる場合は、それを使って非公開で報告してください。利用できない場合は、公開 Issue にエクスポート、生成物、個人情報、再現データを投稿しないでください。まず最小限の公開情報で報告し、保守者から安全な連絡手段が示されるのを待ってください。
+
+## Reporting a vulnerability
+
+Please report suspected vulnerabilities privately through [GitHub Security Advisories](https://github.com/misaka310/chatgpt_chat_view/security/advisories/new). Do not open a public issue for an unpatched vulnerability.
+
+Include reproduction steps, affected versions or commits, impact, and any known workaround. We will acknowledge a report as soon as practical, investigate it, and coordinate remediation and disclosure. Our target is to provide an initial status update within 7 days and, when feasible, resolve or publish a mitigation within 90 days. If a fix needs longer, we will communicate the reason and a revised timeline through the private advisory.
