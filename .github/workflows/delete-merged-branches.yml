@@ -8,8 +8,7 @@ on:
     types:
       - closed
 
-permissions:
-  contents: write
+permissions: read-all
 
 concurrency:
   group: branch-cleanup-${{ github.event.pull_request.number || github.ref }}
@@ -17,6 +16,8 @@ concurrency:
 
 jobs:
   delete-bootstrap-branches:
+    permissions:
+      contents: write
     timeout-minutes: 5
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
@@ -37,6 +38,8 @@ jobs:
           done
 
   delete-merged-pr-branch:
+    permissions:
+      contents: write
     if: github.event_name == 'pull_request' && github.event.pull_request.merged == true && github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 5
