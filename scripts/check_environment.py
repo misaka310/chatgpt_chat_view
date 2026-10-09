@@ -14,6 +14,9 @@ def parse_exact_requirements(path: Path) -> list[tuple[str, str]]:
     requirements: list[tuple[str, str]] = []
     for line_number, raw_line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
         line = raw_line.split("#", 1)[0].strip()
+        if not line or line.startswith("--hash="):
+            continue
+        line = line.removesuffix("\\").strip()
         if not line:
             continue
         if "==" not in line:
