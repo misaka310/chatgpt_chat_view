@@ -21,3 +21,24 @@ ChatGPT Sitesを利用する場合、許可された匿名集計値はリモー�
 ## Reporting a vulnerability
 
 GitHub の **Security** タブで Private Vulnerability Reporting または Security Advisory が利用できる場合は、それを使って非公開で報告してください。利用できない場合は、公開 Issue にエクスポート、生成物、個人情報、再現データを投稿しないでください。まず最小限の公開情報で報告し、保守者から安全な連絡手段が示されるのを待ってください。
+
+<!-- managed-by: repo-launch-doctor-security-baseline-v1 -->
+
+## Reporting a vulnerability
+
+Please do **not** publish suspected vulnerabilities in a public issue. Report them privately through GitHub's security-advisory flow for this repository:
+
+https://github.com/misaka310/chatgpt_chat_view/security/advisories/new
+
+Include the affected version or commit, reproduction steps, impact, and any suggested mitigation. Reports that include a minimal proof of concept are especially useful.
+
+## Response timeline
+
+- Initial acknowledgement target: within 7 days.
+- Triage and severity assessment target: within 14 days.
+- Fix timing depends on impact and complexity; critical issues are prioritized before routine feature work.
+- Coordinated public disclosure should wait until a fix or mitigation is available whenever practical.
+
+## Supported versions
+
+The current default branch and the latest published release, when releases exist, receive security fixes. Older snapshots may not receive backports.
