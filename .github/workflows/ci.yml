@@ -24,8 +24,7 @@ jobs:
           node-version: '22.13.0'
           cache: npm
           cache-dependency-path: sites/usage-dashboard/package-lock.json
-      - run: python -m pip install --upgrade pip
-      - run: pip install -r requirements.txt
+      - run: pip install --require-hashes -r requirements.lock
       - run: python scripts/check_environment.py
       - run: python -m unittest discover -s tests -v
       - run: python scripts/build_sample_output.py --output-dir /tmp/sample-output --publish-dir /tmp/sample-pages
