@@ -25,6 +25,15 @@ class CheckEnvironmentTest(unittest.TestCase):
                 [],
             )
 
+    def test_hash_locked_requirements_are_supported(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_name:
+            requirements = Path(temp_name) / "requirements.txt"
+            requirements.write_text(
+                "alpha==1.2.3 \\\n    --hash=sha256:abc \\\n    --hash=sha256:def\n",
+                encoding="utf-8",
+            )
+            self.assertEqual(self.module.parse_exact_requirements(requirements), [("alpha", "1.2.3")])
+
     def test_missing_and_wrong_versions_are_reported(self) -> None:
         with tempfile.TemporaryDirectory() as temp_name:
             requirements = Path(temp_name) / "requirements.txt"
