@@ -20,4 +20,18 @@ ChatGPT Sitesを利用する場合、許可された匿名集計値はリモー�
 
 ## Reporting a vulnerability
 
-GitHub の **Security** タブで Private Vulnerability Reporting または Security Advisory が利用できる場合は、それを使って非公開で報告してください。利用できない場合は、公開 Issue にエクスポート、生成物、個人情報、再現データを投稿しないでください。まず最小限の公開情報で報告し、保守者から安全な連絡手段が示されるのを待ってください。
+脆弱性は公開Issueへ詳細を書かず、GitHubのPrivate Vulnerability Reportingを使用してください。
+
+- 非公開報告: https://github.com/misaka310/chatgpt_chat_view/security/advisories/new
+- Security overview: https://github.com/misaka310/chatgpt_chat_view/security
+
+利用できない場合は、公開Issueにエクスポート、生成物、個人情報、認証情報、攻撃手順、再現データを投稿しないでください。公開Issueには「非公開連絡手段が必要」であることだけを書いてください。
+
+報告には、影響するcommit、再現条件、期待した挙動と実際の挙動、影響範囲、合成データだけを使った最小再現を含めてください。
+
+## Response and disclosure
+
+- 受領後できるだけ早く再現可否と影響範囲を確認します。
+- 修正が必要な場合は、再現テストを追加してから修正し、`main` へ反映します。
+- 修正公開前に攻撃手順や実データを公開しないでください。公開時期は報告者と調整します。
+- 影響が確認できなかった場合も、判断理由をPrivate Vulnerability Reporting上で返します。
