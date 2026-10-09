@@ -139,7 +139,7 @@ function formatMonth(month: string) {
 }
 
 function formatMonthAxis(month: string) {
-  return month.replace("-", "-");
+  return month;
 }
 
 function formatDate(date: string) {

@@ -23,8 +23,7 @@ jobs:
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: '3.11'
-      - run: python -m pip install --upgrade pip
-      - run: pip install -r requirements.txt
+      - run: python -m pip install --require-hashes -r requirements.txt
       - run: python scripts/build_sample_output.py --output-dir "$RUNNER_TEMP/demo-build" --publish-dir "$RUNNER_TEMP/demo-pages"
       - run: test ! -e "$RUNNER_TEMP/demo-pages/conversations.json"
       - run: test -f "$RUNNER_TEMP/demo-pages/dashboard.html"
