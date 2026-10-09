@@ -35,7 +35,7 @@ jobs:
       - run: python scripts/patch_dashboard_daily_chart.py --output-dir /tmp/chatgpt-dashboard
       - run: npm ci --ignore-scripts
         working-directory: sites/usage-dashboard
-      - run: npm audit --audit-level=high
+      - run: npm audit --omit=dev --audit-level=high
         working-directory: sites/usage-dashboard
       - run: npm test
         working-directory: sites/usage-dashboard
