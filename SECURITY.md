@@ -1,23 +1,17 @@
 # Security Policy
 
-## Scope and data handling
+## Supported version
 
-このツールは ChatGPT 会話エクスポートという機密性の高いデータを扱います。通常の解析処理は外部へデータを送信しません。個人用表示の HTTP サーバーは `127.0.0.1` にだけバインドします。
-
-ただし、入力はローカルで実行される Python によって解析されます。悪意がある、破損している、または信頼できないエクスポートを入力しないでください。
-
-生のエクスポートと、個人用に生成された HTML / JSON / CSV を Git に追加してはいけません。生成物にはタイトルなど会話由来の情報が残ることがあります。個人用生成 HTML を第三者に公開・送付しないでください。
-
-`sites/usage-dashboard` は別の公開専用ルートです。実集計JSONとビルド結果はGit管理外で、許可リスト方式の生成処理と `scripts/verify_sites_public.py` の両方に合格した成果物だけをChatGPT Sitesへ配置します。Sites成果物へ会話本文、タイトル、識別子、入力名、ローカルパス、ログ、認証情報を含めてはいけません。
-
-ChatGPT Sitesを利用する場合、許可された匿名集計値はリモート表示のためSitesへ送信されます。共有設定は利用者自身で決める必要があります。本リポジトリの個人用運用では、所有者だけを許可し、ユーザー・グループ・外部訪問者を追加しない構成を前提とします。
-
-日常的なデータ取り扱いと公開前確認は [PRIVACY.md](PRIVACY.md) に記載しています。この文書は脆弱性報告と安全な利用上の境界を扱います。
-
-## Supported versions
-
-セキュリティ修正は `main` ブランチの最新コミットに対して行います。過去のコミット、fork、ローカルで改変した版は対象外です。
+Security fixes are applied to the current default branch and the latest published release, if releases are used.
 
 ## Reporting a vulnerability
 
-GitHub の **Security** タブで Private Vulnerability Reporting または Security Advisory が利用できる場合は、それを使って非公開で報告してください。利用できない場合は、公開 Issue にエクスポート、生成物、個人情報、再現データを投稿しないでください。まず最小限の公開情報で報告し、保守者から安全な連絡手段が示されるのを待ってください。
+Do not disclose a suspected vulnerability, exploit details, credentials, tokens, private keys, or personal data in a public issue. Please use GitHub's [private vulnerability reporting form](https://github.com/misaka310/chatgpt_chat_view/security/advisories/new).
+
+Include the affected version or commit, reproduction steps, expected impact, and the smallest proof of concept needed to validate the issue.
+
+## Response and disclosure timeline
+
+A private report will normally be acknowledged within 7 days. After validation, remediation is prioritized by severity. Coordinated public disclosure should wait until a fix is available or an agreed disclosure date is reached. If a longer investigation is required, status updates will be provided through the private advisory.
+
+Security reports made in good faith for defensive purposes are welcome.
