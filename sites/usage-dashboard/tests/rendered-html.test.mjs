@@ -1,14 +1,19 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { readFile, readdir } from "node:fs/promises";
 import test from "node:test";
+import fc from "fast-check";
 
-async function render() {
+async function loadWorker() {
   const workerUrl = new URL("../dist/server/index.js", import.meta.url);
-  workerUrl.searchParams.set("test", `${process.pid}-${Date.now()}`);
+  workerUrl.searchParams.set("test", `${process.pid}-${Date.now()}-${Math.random()}`);
   const { default: worker } = await import(workerUrl.href);
+  return worker;
+}
 
+function fetchWorker(worker, url = "http://localhost/") {
   return worker.fetch(
-    new Request("http://localhost/", { headers: { accept: "text/html" } }),
+    new Request(url, { headers: { accept: "text/html" } }),
     {
       ASSETS: {
         fetch: async () => new Response("Not found", { status: 404 }),
@@ -19,6 +24,10 @@ async function render() {
       passThroughOnException() {},
     },
   );
+}
+
+async function render() {
+  return fetchWorker(await loadWorker());
 }
 
 test("server-renders the private aggregate dashboard shell", async () => {
@@ -32,6 +41,22 @@ test("server-renders the private aggregate dashboard shell", async () => {
   assert.match(html, /会話本文を含まない集計データを読み込んでいます/);
   assert.match(html, /name="robots" content="noindex, nofollow, nocache"/i);
   assert.doesNotMatch(html, /Your site is taking shape|react-loading-skeleton/i);
+});
+
+test("query-string fuzzing always renders a healthy noindex dashboard", async () => {
+  const worker = await loadWorker();
+  await fc.assert(
+    fc.asyncProperty(fc.string({ maxLength: 96 }), async (value) => {
+      const digest = createHash("sha256").update(value).digest("hex");
+      const response = await fetchWorker(worker, `http://localhost/?q=fc-${digest}`);
+      assert.equal(response.status, 200);
+      assert.match(response.headers.get("content-type") ?? "", /^text\/html\b/i);
+      const html = await response.text();
+      assert.match(html, /<title>ChatGPT 利用ダッシュボード<\/title>/i);
+      assert.match(html, /name="robots" content="noindex, nofollow, nocache"/i);
+    }),
+    { numRuns: 40 },
+  );
 });
 
 test("keeps the public source surface minimal, reference-aligned, responsive, and local-only", async () => {
