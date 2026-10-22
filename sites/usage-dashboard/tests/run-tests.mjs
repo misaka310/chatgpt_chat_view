@@ -63,7 +63,7 @@ try {
   writeFileSync(dataPath, `${JSON.stringify(synthetic)}\n`, "utf8");
   const built = run(process.execPath, ["./node_modules/vinext/dist/cli.js", "build"]);
   if (built) {
-    run(process.execPath, ["--test", "tests/rendered-html.test.mjs"]);
+    run(process.execPath, ["--test", "tests/rendered-html.test.mjs", "tests/fuzz-properties.test.mjs"]);
     run(process.execPath, ["tests/mobile-ui.test.mjs"]);
   }
 } finally {
