@@ -76,6 +76,12 @@ class RepositorySafetyTest(unittest.TestCase):
         self.assertIn(marker, setup)
         self.assertIn("scripts\\check_environment.py", start)
 
+    def test_merged_branch_cleanup_uses_per_event_concurrency(self) -> None:
+        repo_root = Path(__file__).resolve().parents[1]
+        content = (repo_root / ".github" / "workflows" / "delete-merged-branches.yml").read_text(encoding="utf-8")
+        self.assertIn("group: branch-cleanup-${{ github.repository }}-${{ github.event.pull_request.number || github.sha }}", content)
+        self.assertIn("cancel-in-progress: true", content)
+
     def test_public_documentation_targets_exist(self) -> None:
         repo_root = Path(__file__).resolve().parents[1]
         for path in (
