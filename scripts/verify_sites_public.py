@@ -15,7 +15,7 @@ DAY_KEYS = {"date", "month", "day", "sent_messages", "non_voice_messages", "voic
 HOURLY_WEEKDAY_KEYS = {"month", "weekday", "hour", "sent_messages", "non_voice_messages", "voice_messages"}
 ALLOWED_TEXT_SUFFIXES = {".html", ".js", ".mjs", ".css", ".json", ".svg", ".txt"}
 ALLOWED_BINARY_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp", ".ico", ".woff", ".woff2"}
-ALLOWED_EXTENSIONLESS_ARTIFACTS = {"client/.assetsignore", "client/_headers", "server/BUILD_ID"}
+ALLOWED_EXTENSIONLESS_ARTIFACTS = {"client/.assetsignore", "client/_headers", "server/BUILD_ID", "server/RSC_BUILD_ID"}
 FIXED_METHOD = "ChatGPTエクスポートをPC内で解析し、全件・音声除外・音声のみの送信回数など、本文を含まない数値だけを許可リスト方式で抽出しています。"
 
 FORBIDDEN_PATTERNS = (
@@ -189,6 +189,11 @@ def verify_artifact_file_types(root: Path, files: Iterable[Path]) -> None:
                     re.IGNORECASE,
                 ):
                     fail("invalid server/BUILD_ID artifact")
+            elif relative == "server/RSC_BUILD_ID":
+                # vinext emits a 32-character hexadecimal RSC identity.
+                rsc_build_id = path.read_text(encoding="utf-8").strip()
+                if not re.fullmatch(r"[0-9a-f]{32}", rsc_build_id):
+                    fail("invalid server/RSC_BUILD_ID artifact")
             continue
         if suffix not in ALLOWED_TEXT_SUFFIXES | ALLOWED_BINARY_SUFFIXES:
             fail(f"unapproved artifact type: {relative}")
