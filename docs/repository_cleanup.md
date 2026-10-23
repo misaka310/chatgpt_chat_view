@@ -21,4 +21,5 @@
 - `input/.keep` だけを追跡します。
 - Sitesへ渡す `usage-data.json` はGit管理外で、月日と数値だけを許可リスト方式で生成します。
 - Sitesのソースとビルド成果物は `scripts/verify_sites_public.py` で漏えい検査します。
+- PRマージ後の作業ブランチ削除ワークフローは、PR番号またはpush SHAごとにconcurrencyを分け、別PRの削除処理を相互キャンセルしません。重複した同一イベントの実行だけをキャンセル可能にします。
 - 公開前に `python -m unittest` と Sites側のテストを実行します。
