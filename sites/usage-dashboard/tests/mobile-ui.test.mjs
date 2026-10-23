@@ -288,17 +288,23 @@ async function main() {
       select.dispatchEvent(new Event('change', { bubbles: true }));
       return true;
     })()`);
-    await new Promise((resolveDelay) => setTimeout(resolveDelay, 150));
-    const afterMonthChange = await cdp.evaluate(`(() => {
-      const select = document.querySelector('.period-select select');
-      const daily = document.querySelector('.daily-scroll');
-      const maxScroll = Math.max(0, daily.scrollWidth - daily.clientWidth);
-      return {
-        selectedMonth: select.value,
-        summaryTitle: document.querySelector('.summary-panel h2')?.textContent?.trim() ?? '',
-        dailyAtEnd: Math.abs(daily.scrollLeft - maxScroll) <= 3,
-      };
-    })()`);
+    let afterMonthChange;
+    const monthDeadline = Date.now() + 5_000;
+    do {
+      afterMonthChange = await cdp.evaluate(`(() => {
+        const select = document.querySelector('.period-select select');
+        const daily = document.querySelector('.daily-scroll');
+        const maxScroll = Math.max(0, daily.scrollWidth - daily.clientWidth);
+        return {
+          selectedMonth: select.value,
+          summaryTitle: document.querySelector('.summary-panel h2')?.textContent?.trim() ?? '',
+          dailyAtEnd: Math.abs(daily.scrollLeft - maxScroll) <= 3,
+        };
+      })()`);
+      if (afterMonthChange.selectedMonth === "2025-12" &&
+          afterMonthChange.summaryTitle.includes("2025年12月") && afterMonthChange.dailyAtEnd) break;
+      await new Promise((resolveDelay) => setTimeout(resolveDelay, 100));
+    } while (Date.now() < monthDeadline);
 
     const checks = {
       viewport: initial.viewport[0] === 390 && initial.viewport[1] === 844,

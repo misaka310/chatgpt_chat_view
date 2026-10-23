@@ -23,18 +23,25 @@ function freePort() {
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function stopWorker(child) {
-  if (!child || child.exitCode !== null || !child.pid) return;
+  if (!child || child.exitCode !== null || child.signalCode !== null || !child.pid) return;
   if (process.platform === "win32") {
     spawnSync("taskkill", ["/PID", String(child.pid), "/T", "/F"], {
       windowsHide: true,
       stdio: "ignore",
     });
-    return;
+  } else {
+    try {
+      process.kill(-child.pid, "SIGTERM");
+    } catch {
+      child.kill("SIGTERM");
+    }
   }
-  try {
-    process.kill(-child.pid, "SIGTERM");
-  } catch {
-    child.kill("SIGTERM");
+  // Wait for the child to release its pipes and state directory on Windows.
+  if (child.exitCode === null && child.signalCode === null) {
+    await new Promise((resolve) => {
+      const timer = setTimeout(resolve, 5_000);
+      child.once("exit", () => { clearTimeout(timer); resolve(); });
+    });
   }
 }
 
