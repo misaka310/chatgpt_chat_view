@@ -10,8 +10,8 @@ permissions:
   contents: read
 
 concurrency:
-  group: branch-cleanup-${{ github.repository }}
-  cancel-in-progress: false
+  group: branch-cleanup-${{ github.repository }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: true
 
 jobs:
   cleanup:
