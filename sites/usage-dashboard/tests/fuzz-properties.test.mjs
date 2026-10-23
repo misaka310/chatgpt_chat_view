@@ -1,15 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import fc from "fast-check";
+import { startLocalWorker } from "./local-worker.mjs";
 
-async function loadWorker() {
-  const workerUrl = new URL("../dist/server/index.js", import.meta.url);
-  workerUrl.searchParams.set("fuzz", `${process.pid}-${Date.now()}`);
-  return (await import(workerUrl.href)).default;
-}
+let worker;
+test.before(async () => { worker = await startLocalWorker(); });
+test.after(async () => { await worker?.close(); });
 
 test("property: arbitrary request paths never crash the dashboard worker", async () => {
-  const worker = await loadWorker();
   await fc.assert(
     fc.asyncProperty(
       fc.array(fc.constantFrom(..."abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_"), { maxLength: 80 })
@@ -17,8 +15,6 @@ test("property: arbitrary request paths never crash the dashboard worker", async
       async (segment) => {
         const response = await worker.fetch(
           new Request(`http://localhost/${segment}`, { headers: { accept: "text/html" } }),
-          { ASSETS: { fetch: async () => new Response("Not found", { status: 404 }) } },
-          { waitUntil() {}, passThroughOnException() {} },
         );
         assert.ok(response instanceof Response);
         assert.ok(response.status >= 100 && response.status <= 599);

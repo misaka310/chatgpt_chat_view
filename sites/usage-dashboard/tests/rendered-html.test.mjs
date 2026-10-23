@@ -3,31 +3,18 @@ import { createHash } from "node:crypto";
 import { readFile, readdir } from "node:fs/promises";
 import test from "node:test";
 import fc from "fast-check";
+import { startLocalWorker } from "./local-worker.mjs";
 
-async function loadWorker() {
-  const workerUrl = new URL("../dist/server/index.js", import.meta.url);
-  workerUrl.searchParams.set("test", `${process.pid}-${Date.now()}-${Math.random()}`);
-  const { default: worker } = await import(workerUrl.href);
-  return worker;
-}
+let worker;
+test.before(async () => { worker = await startLocalWorker(); });
+test.after(async () => { await worker?.close(); });
 
 function fetchWorker(worker, url = "http://localhost/") {
-  return worker.fetch(
-    new Request(url, { headers: { accept: "text/html" } }),
-    {
-      ASSETS: {
-        fetch: async () => new Response("Not found", { status: 404 }),
-      },
-    },
-    {
-      waitUntil() {},
-      passThroughOnException() {},
-    },
-  );
+  return worker.fetch(new Request(url, { headers: { accept: "text/html" } }));
 }
 
 async function render() {
-  return fetchWorker(await loadWorker());
+  return fetchWorker(worker);
 }
 
 test("server-renders the private aggregate dashboard shell", async () => {
@@ -44,7 +31,6 @@ test("server-renders the private aggregate dashboard shell", async () => {
 });
 
 test("query-string fuzzing always renders a healthy noindex dashboard", async () => {
-  const worker = await loadWorker();
   await fc.assert(
     fc.asyncProperty(fc.string({ maxLength: 96 }), async (value) => {
       const digest = createHash("sha256").update(value).digest("hex");
