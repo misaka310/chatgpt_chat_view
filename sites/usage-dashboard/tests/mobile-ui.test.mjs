@@ -6,7 +6,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const SITE = fileURLToPath(new URL("../", import.meta.url));
-const VINEXT = path.join(SITE, "node_modules", "vinext", "dist", "cli.js");
+const WRANGLER = path.join(SITE, "node_modules", "wrangler", "bin", "wrangler.js");
 const ARTIFACT_DIR = path.join(SITE, ".npm-cache", "mobile-ui-test");
 
 function findBrowser() {
@@ -25,9 +25,9 @@ function findBrowser() {
       "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser",
     );
   } else {
+    const searchPaths = (process.env.PATH ?? "").split(path.delimiter).filter(Boolean);
     for (const command of ["google-chrome", "google-chrome-stable", "chromium", "chromium-browser"]) {
-      const result = spawnSync("which", [command], { encoding: "utf8" });
-      if (result.status === 0 && result.stdout.trim()) candidates.push(result.stdout.trim());
+      for (const directory of searchPaths) candidates.push(path.join(directory, command));
     }
   }
 
@@ -184,7 +184,7 @@ async function main() {
   let cdp = null;
 
   try {
-    server = spawn(process.execPath, [VINEXT, "start", "--hostname", "127.0.0.1", "--port", String(sitePort)], {
+    server = spawn(process.execPath, [WRANGLER, "dev", "--config", "dist/server/wrangler.json", "--ip", "127.0.0.1", "--port", String(sitePort), "--local", "--show-interactive-dev-session=false"], {
       cwd: SITE,
       detached: process.platform !== "win32",
       stdio: "ignore",
