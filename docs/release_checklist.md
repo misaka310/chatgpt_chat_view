@@ -19,6 +19,7 @@ Use this before merging or publishing a release.
 - [ ] No raw export, generated private output, or real `usage-data.json` is staged or committed.
 - [ ] Screenshots use fake sample data or are fully redacted.
 - [ ] `scripts/verify_sites_public.py` passes for the Sites source and built artifact.
+- [ ] The vinext-generated `server/RSC_BUILD_ID` is exactly 32 hexadecimal characters; unknown extensionless artifacts remain blocked.
 - [ ] The Sites artifact contains no conversation text, title, ID, input filename, local path, email address, or secret.
 
 ## First-run UX
